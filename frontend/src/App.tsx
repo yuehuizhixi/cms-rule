@@ -161,7 +161,7 @@ export default function App() {
   }, []);
 
   // --- Load Data ---
-  const loadData = useCallback(async (reSelectCurrent = false) => {
+  const loadData = useCallback(async () => {
     try {
       const resp = await api.getGroups();
       const data = resp.data;
@@ -180,12 +180,6 @@ export default function App() {
         if (loadedGroups[0].rules.length > 0) {
           selectRule(loadedGroups[0].rules[0].id, loadedGroups);
         }
-      }
-      // 重新选中当前规则刷新画布（用于保存/更新后）
-      if (reSelectCurrent && currentRuleId) {
-        const grp = loadedGroups.find(g => g.id === currentTabId);
-        const updated = grp?.rules.find(r => r.id === currentRuleId);
-        if (updated) selectRule(updated.id, loadedGroups);
       }
     } catch { showToast("加载数据失败"); }
   }, [currentTabId, showToast]);
@@ -296,7 +290,27 @@ export default function App() {
     if (!confirm(`确认${checked ? "启用" : "停用"}规则？`)) return;
     try {
       await api.updateRuleStatus(rule.id, checked ? "ACTIVE" : "INACTIVE");
-      await loadData(true);
+      // 直接拉取最新数据刷新列表和画布
+      const resp = await api.getGroups();
+      const data = resp.data;
+      const freshGroups: Group[] = (data?.groups || []).map((g: any) => ({
+        id: g.id, name: g.name,
+        rules: (data?.rules || []).filter((r: any) => r.groupId === g.id).map((r: any) => ({
+          id: r.id, name: r.name, description: r.description || "",
+          enabled: r.status === "ACTIVE", drafted: r.status === "DRAFT",
+          poll: secondsToPoll(r.pollInterval),
+          flow: parseFlow(r.flow),
+        }))
+      }));
+      setGroups(freshGroups);
+      if (currentRuleId) {
+        const grp = freshGroups.find(g => g.id === currentTabId);
+        const fresh = grp?.rules.find(r => r.id === currentRuleId);
+        if (fresh) {
+          const flow = fresh.flow || createEmptyFlow();
+          setCanvasFlow(JSON.parse(JSON.stringify(flow)));
+        }
+      }
       showToast(checked ? "规则已启用" : "规则已停用");
     } catch { showToast("操作失败"); }
   }
@@ -416,6 +430,38 @@ export default function App() {
     setDrawerOpen(false);
   }
 
+  // --- 全量刷新（保存/暂存后，从后端重新加载） ---
+  async function fullRefresh() {
+    try {
+      const resp = await api.getGroups();
+      const data = resp.data;
+      const loadedGroups: Group[] = (data?.groups || []).map((g: any) => ({
+        id: g.id, name: g.name,
+        rules: (data?.rules || []).filter((r: any) => r.groupId === g.id).map((r: any) => ({
+          id: r.id, name: r.name, description: r.description || "",
+          enabled: r.status === "ACTIVE", drafted: r.status === "DRAFT",
+          poll: secondsToPoll(r.pollInterval),
+          flow: parseFlow(r.flow),
+        }))
+      }));
+      setGroups(loadedGroups);
+      // 重新选中当前规则并刷新画布
+      const grp = loadedGroups.find(g => g.id === currentTabId);
+      const fresh = grp?.rules.find(r => r.id === currentRuleId);
+      if (fresh) {
+        const flow = fresh.flow || createEmptyFlow();
+        setCanvasFlow(JSON.parse(JSON.stringify(flow)));
+        const counters: Record<string, number> = {};
+        Object.values(flow.nodes).forEach((n: any) => { counters[n.type] = (counters[n.type] || 0) + 1; });
+        setNodeCounters(counters);
+        setCanvasScale(1);
+        setCanvasOffset({ x: 60, y: 40 });
+      }
+      setIsDirty(false);
+      setDrawerOpen(false);
+    } catch { showToast("刷新失败"); }
+  }
+
   // --- Save / Draft ---
   async function saveRule() {
     if (!currentRule) return;
@@ -435,8 +481,8 @@ export default function App() {
     }
     try {
       await api.saveRuleFlow(currentRule.id, JSON.stringify(canvasFlow));
-      await loadData(true);
-      exitEditMode();
+      // 保存后从后端重新加载完整数据，刷新页面
+      await fullRefresh();
       showToast("已保存✓");
     } catch { showToast("保存失败"); }
   }
@@ -445,8 +491,7 @@ export default function App() {
     if (!currentRule) return;
     try {
       await api.saveRuleFlow(currentRule.id, JSON.stringify(canvasFlow), true);
-      await loadData(true);
-      exitEditMode();
+      await fullRefresh();
       showToast("规则已暂存，完成配置后可正式保存并启用");
     } catch { showToast("暂存失败"); }
   }
@@ -534,22 +579,19 @@ export default function App() {
 
   // --- Param Picker ---
   const [paramPickerCallback, setParamPickerCallback] = useState<((name: string) => void) | null>(null);
-  const [paramSearch, setParamSearch] = useState("");
+  const [pickerCurrentParam, setPickerCurrentParam] = useState<string | undefined>(undefined);
 
   function openParamPicker(current: string | undefined, cb: (name: string) => void) {
     setParamPickerCallback(() => cb);
-    setParamSearch("");
+    setPickerCurrentParam(current);
     setParamPickerOpen(true);
   }
 
   function closeParamPicker() {
     setParamPickerOpen(false);
     setParamPickerCallback(null);
+    setPickerCurrentParam(undefined);
   }
-
-  const filteredPoints = POINTS.filter(p =>
-    !paramSearch || p.name.toLowerCase().includes(paramSearch.toLowerCase())
-  );
 
   // --- Preview ---
   function startPreview() {
@@ -1032,7 +1074,7 @@ export default function App() {
     try {
       if (editRuleId) {
         await api.updateRule(editRuleId, { name, description: ruleFormDesc, pollInterval: pollSecs });
-        await loadData(true);
+        await loadData();
         showToast("已更新");
       } else {
         const targetGroupId = currentTabId || groups[0]?.id;
@@ -1334,10 +1376,10 @@ export default function App() {
       {/* ===== Param Picker - Using ParamPicker component ===== */}
       <ParamPicker
         open={paramPickerOpen}
-        currentParam={paramPickerCallback ? undefined : undefined}
-        onSelect={(name) => {
+        currentParam={pickerCurrentParam}
+        onSelect={(param) => {
           if (paramPickerCallback) {
-            paramPickerCallback(name);
+            paramPickerCallback(param.ref);
           }
           closeParamPicker();
         }}

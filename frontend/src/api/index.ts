@@ -126,3 +126,39 @@ export async function getParameterLastValues(): Promise<ApiResponse<any[]>> {
   const res = await client.get('/parameters/last-values');
   return res.data;
 }
+
+// ========== 参数选择代理接口 (proxy to real microservices) ==========
+
+const proxyClient = axios.create({ baseURL: 'http://localhost:8080/api/rule-engine/proxy' });
+
+// 能源类型
+// POST /api/cms-cloud-service/energyInfo/queryCache
+// → /proxy/energyInfo/queryCache
+export async function proxyEnergyQueryCache(body = {}): Promise<any> {
+  const res = await proxyClient.post('/energyInfo/queryCache', body);
+  return res.data;
+}
+
+// 位置树查询
+// POST /api/cms-cloud-service/locationTree/query
+// → /proxy/locationTree/query
+export async function proxyLocationTreeQuery(body: Record<string, any>): Promise<any> {
+  const res = await proxyClient.post('/locationTree/query', body);
+  return res.data;
+}
+
+// 设备参数列表（分页）
+// POST /api/hvac_iot/jnyz/dataset/queryParams
+// → /proxy/jnyz/dataset/queryParams
+export async function proxyQueryParams(body: Record<string, any>): Promise<any> {
+  const res = await proxyClient.post('/jnyz/dataset/queryParams', body);
+  return res.data;
+}
+
+// 绑定关系查询（结构树）
+// POST /api/cms-cloud-service/projectModel/queryBindRelationAll
+// → /proxy/projectModel/queryBindRelationAll
+export async function proxyQueryBindRelationAll(body: Record<string, any>): Promise<any> {
+  const res = await proxyClient.post('/projectModel/queryBindRelationAll', body);
+  return res.data;
+}

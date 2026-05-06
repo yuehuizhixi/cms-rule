@@ -8,4 +8,4 @@ export { default as ParamPicker } from './ParamPicker';
 export { NODE_TYPES, OPERATORS } from './RuleCanvas';
 export type { Flow, FlowNode, Branch, NodeConfig, BranchConfig, TimerGroup, RuleCanvasProps } from './RuleCanvas';
 export type { ConfigDrawerProps, PointsItem } from './ConfigDrawer';
-export type { ParamPickerProps } from './ParamPicker';
+export type { ParamPickerProps, SelectedParam } from './ParamPicker';

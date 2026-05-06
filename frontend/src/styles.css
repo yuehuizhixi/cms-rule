@@ -17,6 +17,7 @@
   --ink: #1f2533;
   --muted: #8a93a6;
   --line: #dde2ec;
+  --accent: #3b6ef5;
   --blue: #3b6ef5;
   --blue-soft: #eaf0ff;
   --blue-hover: #2d5be0;
@@ -1844,6 +1845,347 @@ body, html {
 }
 
 .imp-modal h3 { margin: 0 0 20px; font-size: 15px; font-weight: 700 }
+
+/* ===== Param Picker (重写版) ===== */
+.prm.show {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.prm-mask {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,.35);
+}
+.prm-body {
+  position: relative;
+  background: #fff;
+  border-radius: 10px;
+  width: 960px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0,0,0,.2);
+}
+.prm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.prm-header h3 { margin: 0; font-size: 15px; font-weight: 700 }
+.prm-close {
+  width: 24px; height: 24px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 4px; cursor: pointer; font-size: 14px; color: var(--muted);
+}
+.prm-close:hover { background: #f0f2f5 }
+
+.prm-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--line);
+  padding: 0 20px;
+}
+.prm-tab {
+  padding: 8px 16px;
+  font-size: 13px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  transition: all .15s;
+}
+.prm-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+.prm-tab:hover:not(.active) { color: #333 }
+
+/* ── 参数列表 ── */
+.prm-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 20px;
+  overflow: hidden;
+}
+.prm-list-filters {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+.prm-filter-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.prm-filter-item label {
+  font-size: 11px;
+  color: var(--muted);
+}
+.prm-filter-item input {
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 8px;
+  font-size: 12px;
+  outline: none;
+  width: 140px;
+}
+.prm-filter-item input:focus { border-color: var(--accent) }
+.prm-filter-action {
+  display: flex;
+  align-items: flex-end;
+}
+
+.prm-table-wrap {
+  flex: 1;
+  overflow: auto;
+}
+.prm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.prm-table th {
+  background: #f5f7fa;
+  padding: 7px 8px;
+  text-align: left;
+  font-weight: 600;
+  border-bottom: 2px solid var(--line);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.prm-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #f0f0f0;
+}
+.prm-row {
+  cursor: pointer;
+  transition: background .1s;
+}
+.prm-row:hover { background: #f0f5ff }
+.prm-row.selected { background: #e6f0ff }
+.prm-row.selected td:first-child { border-left: 3px solid var(--accent) }
+.prm-mono { font-family: 'SF Mono', Menlo, monospace; font-size: 11px; color: #888 }
+.prm-empty {
+  text-align: center;
+  padding: 40px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.prm-pagination {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--line);
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.prm-pagination button {
+  width: 24px; height: 24px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.prm-pagination button:disabled { opacity: .4; cursor: default }
+.prm-pagination button:not(:disabled):hover { border-color: var(--accent); color: var(--accent) }
+.prm-page-info { min-width: 80px; text-align: center }
+
+/* ── 结构树 ── */
+.prm-tree-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.prm-tree-filterbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: #fafbfc;
+  flex-wrap: wrap;
+}
+.prm-tf-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.prm-tf-item label {
+  font-size: 11px;
+  color: var(--muted);
+}
+.prm-tf-item select,
+.prm-tf-item input {
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 11px;
+  outline: none;
+  min-width: 100px;
+}
+.prm-tf-item select:focus,
+.prm-tf-item input:focus { border-color: var(--accent) }
+.prm-tree-hsplit {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+.prm-tree-left {
+  width: 35%;
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+}
+.prm-tree-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.prm-tree-breadcrumb {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow-x: auto;
+}
+.prm-bc-link {
+  color: var(--accent);
+  cursor: pointer;
+}
+.prm-bc-link:hover { text-decoration: underline }
+.prm-bc-sep { color: #bbb; margin: 0 3px }
+
+.prm-tree-scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 6px 0;
+}
+.prm-tree-ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.prm-tree-sublist { padding-left: 20px }
+.prm-tree-node {
+  display: flex;
+  align-items: center;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  gap: 3px;
+  border-radius: 3px;
+  transition: background .1s;
+}
+.prm-tree-node:hover { background: #f0f5ff }
+.prm-tree-node.selected { background: #e6f0ff; color: var(--accent); font-weight: 600 }
+.prm-tree-toggle {
+  width: 14px;
+  font-size: 9px;
+  text-align: center;
+  color: #999;
+  flex-shrink: 0;
+}
+.prm-tree-icon { font-size: 13px; flex-shrink: 0 }
+.prm-tree-label { margin: 0 2px }
+.prm-tree-type { color: #bbb; font-size: 11px }
+
+.prm-tree-right-filterbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+.prm-tree-params {
+  flex: 1;
+  overflow: auto;
+}
+.prm-table-sm td, .prm-table-sm th { padding: 4px 6px; font-size: 11px }
+
+/* ── 底部 ── */
+.prm-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-top: 1px solid var(--line);
+  background: #fafbfc;
+  border-radius: 0 0 10px 10px;
+}
+.prm-selected {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  flex: 1;
+  min-width: 0;
+}
+.prm-selected-label { color: var(--muted); white-space: nowrap }
+.prm-selected-value {
+  color: var(--accent);
+  font-family: 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prm-footer-actions { display: flex; gap: 8px }
+
+.prm-btn-primary {
+  height: 28px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.prm-btn-primary:disabled { opacity: .5; cursor: default }
+.prm-btn-primary:not(:disabled):hover { opacity: .85 }
+.prm-btn-default {
+  height: 28px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+  color: #333;
+  font-size: 12px;
+  cursor: pointer;
+}
+.prm-btn-default:hover { border-color: var(--accent); color: var(--accent) }
+.prm-btn-sm {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+  font-size: 11px;
+  cursor: pointer;
+}
+.prm-btn-sm:hover { border-color: var(--accent); color: var(--accent) }
 
 /* ===== Scrollbar ===== */
 ::-webkit-scrollbar { width: 6px; height: 6px }
