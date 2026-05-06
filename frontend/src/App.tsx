@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import * as api from './api';
 import './styles.css';
 import { RuleCanvas, ConfigDrawer, ParamPicker } from './components/canvas';
@@ -100,7 +100,7 @@ export default function App() {
   const [nodeMenuPos, setNodeMenuPos] = useState({ x: 0, y: 0 });
   const [nodeMenuCtx, setNodeMenuCtx] = useState<null | { index: number; ctx: null | { parentNodeId: string; branchId: string } }>(null);
   const nodeMenuRef = useRef<HTMLDivElement>(null);
-  const NODE_TYPE_KEYS = Object.keys(NODE_TYPES);
+  const NODE_TYPE_KEYS = React.useMemo(() => Object.keys(NODE_TYPES), []);
   const hasTimerNode = useMemo(() => Object.values(canvasFlow.nodes).some(n => n.type === 'timer'), [canvasFlow.nodes]);
   const selectNodeType = useCallback((type: string) => {
     setNodeMenuVisible(false);
@@ -1544,7 +1544,7 @@ export default function App() {
             return (
               <div key={key}
                 className={`nmm-item ${disabled ? 'disabled' : ''}`}
-                onClick={() => !disabled && selectNodeType(key)}
+                onClick={() => { if (!disabled) { setNodeMenuVisible(false); selectNodeType(key); } }}
               >
                 <div className="nmm-dot" style={{ background: nt.color }} />
                 <div className="nmm-label">{nt.label}</div>
