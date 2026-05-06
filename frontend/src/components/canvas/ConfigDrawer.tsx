@@ -90,6 +90,20 @@ export default function ConfigDrawer({
           </div>
         )}
 
+        {/* 分支名称编辑框 */}
+        {isBranch && (
+          <div className="field" style={{ margin: '0 16px 12px' }}>
+            <label>分支名称<span className="req">*</span></label>
+            <input type="text" value={branch?.name || ''}
+              onChange={(e) => {
+                if (onBranchChange && ctx) {
+                  onBranchChange(ctx.nodeId, ctx.branchId!, { name: e.target.value });
+                }
+              }}
+              placeholder="分支名称" />
+          </div>
+        )}
+
         <div className="dbody" id="dbody">
           {isBranch && branch ? (
             <ConditionBuilder
