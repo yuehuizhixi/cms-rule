@@ -425,12 +425,7 @@ export default function RuleCanvas({
       csp.className = 'csp';
       bcl.appendChild(csp);
 
-      // Empty nested connector
-      if (isDirty && branch.nested.length === 0) {
-        bcl.appendChild(createConnector(0, { parentNodeId: node.id, branchId: branch.id }));
-      }
-
-      // Add connector at end of nested
+      // 分支末尾的加号（添加嵌套节点用），分支为空或已有节点时各一个
       if (isDirty) {
         bcl.appendChild(createConnector(branch.nested.length, { parentNodeId: node.id, branchId: branch.id }));
       }
