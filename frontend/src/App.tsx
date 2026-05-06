@@ -161,7 +161,7 @@ export default function App() {
   }, []);
 
   // --- Load Data ---
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (reSelectCurrent = false) => {
     try {
       const resp = await api.getGroups();
       const data = resp.data;
@@ -180,6 +180,12 @@ export default function App() {
         if (loadedGroups[0].rules.length > 0) {
           selectRule(loadedGroups[0].rules[0].id, loadedGroups);
         }
+      }
+      // 重新选中当前规则刷新画布（用于保存/更新后）
+      if (reSelectCurrent && currentRuleId) {
+        const grp = loadedGroups.find(g => g.id === currentTabId);
+        const updated = grp?.rules.find(r => r.id === currentRuleId);
+        if (updated) selectRule(updated.id, loadedGroups);
       }
     } catch { showToast("加载数据失败"); }
   }, [currentTabId, showToast]);
@@ -252,7 +258,7 @@ export default function App() {
     if (!newName.trim()) return;
     try {
       await api.updateGroup(tabId, newName.trim());
-      setGroups(prev => prev.map(g => g.id === tabId ? { ...g, name: newName.trim() } : g));
+      await loadData();
       setTabEditing(null);
     } catch { showToast("重命名失败"); }
   }
@@ -290,12 +296,7 @@ export default function App() {
     if (!confirm(`确认${checked ? "启用" : "停用"}规则？`)) return;
     try {
       await api.updateRuleStatus(rule.id, checked ? "ACTIVE" : "INACTIVE");
-      await loadData();
-      if (currentRuleId === rule.id) {
-        const grp = groups.find(g => g.id === currentTabId);
-        const updated = grp?.rules.find(r => r.id === rule.id);
-        if (updated) selectRule(rule.id);
-      }
+      await loadData(true);
       showToast(checked ? "规则已启用" : "规则已停用");
     } catch { showToast("操作失败"); }
   }
@@ -434,7 +435,7 @@ export default function App() {
     }
     try {
       await api.saveRuleFlow(currentRule.id, JSON.stringify(canvasFlow));
-      await loadData();
+      await loadData(true);
       exitEditMode();
       showToast("已保存✓");
     } catch { showToast("保存失败"); }
@@ -444,7 +445,7 @@ export default function App() {
     if (!currentRule) return;
     try {
       await api.saveRuleFlow(currentRule.id, JSON.stringify(canvasFlow), true);
-      await loadData();
+      await loadData(true);
       exitEditMode();
       showToast("规则已暂存，完成配置后可正式保存并启用");
     } catch { showToast("暂存失败"); }
@@ -1031,13 +1032,14 @@ export default function App() {
     try {
       if (editRuleId) {
         await api.updateRule(editRuleId, { name, description: ruleFormDesc, pollInterval: pollSecs });
+        await loadData(true);
         showToast("已更新");
       } else {
         const targetGroupId = currentTabId || groups[0]?.id;
         if (!targetGroupId) return;
         const resp = await api.createRule({ groupId: targetGroupId, name, description: ruleFormDesc, pollInterval: pollSecs });
-        showToast("已创建");
         await loadData();
+        showToast("已创建");
         if (resp.data?.id) selectRule(resp.data.id);
       }
       setRuleModalOpen(false);
