@@ -993,9 +993,10 @@ body, html {
 .csb, .cst {
   width: 2px;
   background: #c8cfdc;
-  flex-shrink: 0;
-  height: 14px
+  flex-shrink: 0
 }
+.csb { flex: 1; min-height: 14px }
+.cst { height: 14px }
 
 .csp {
   flex: 1 1 0;

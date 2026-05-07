@@ -102,6 +102,7 @@ export interface RuleCanvasProps {
   onScaleChange: (delta: number) => void;
   onOffsetChange: (offset: { x: number; y: number }) => void;
   onNodeNameChange?: (nodeId: string, newName: string) => void;
+  onRenameBranch?: (nodeId: string, branchId: string, newName: string) => void;
 }
 
 // ============ Main Component ============
@@ -121,6 +122,7 @@ export default function RuleCanvas({
   onScaleChange,
   onOffsetChange,
   onNodeNameChange,
+  onRenameBranch,
 }: RuleCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -153,6 +155,26 @@ export default function RuleCanvas({
   useEffect(() => {
     renderCanvas();
   }, [renderCanvas]);
+
+  // Sync branch heights after render
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const syncHeights = () => {
+      const bsrList = containerRef.current.querySelectorAll('.bsr');
+      bsrList.forEach((bsr) => {
+        const bcls = Array.from(bsr.children).filter(
+          (el) => el.classList && el.classList.contains('bcl')
+        ) as HTMLElement[];
+        if (bcls.length < 2) return;
+        bcls.forEach((b) => { b.style.minHeight = ''; });
+        let maxH = 0;
+        bcls.forEach((b) => { if (b.offsetHeight > maxH) maxH = b.offsetHeight; });
+        bcls.forEach((b) => { b.style.minHeight = maxH + 'px'; });
+      });
+    };
+    // Run after DOM update
+    requestAnimationFrame(() => requestAnimationFrame(syncHeights));
+  }, [flow, isDirty]);
 
   // Handle scroll to node request
   useEffect(() => {
@@ -294,6 +316,32 @@ export default function RuleCanvas({
     title.textContent = node.name;
     title.addEventListener('click', (e) => e.stopPropagation());
     title.addEventListener('mousedown', (e) => e.stopPropagation());
+    // 双击编辑节点名称
+    title.addEventListener('dblclick', (e) => {
+      if (!isDirty) return;
+      e.stopPropagation();
+      title.contentEditable = 'true';
+      title.focus();
+      const range = document.createRange();
+      range.selectNodeContents(title);
+      const sel = window.getSelection();
+      if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+      const orig = node.name;
+      const finish = () => {
+        title.contentEditable = 'false';
+        const val = (title.textContent || '').trim();
+        if (val && val !== orig) {
+          onNodeNameChange?.(node.id, val);
+        } else {
+          title.textContent = orig;
+        }
+      };
+      title.addEventListener('blur', finish, { once: true });
+      title.addEventListener('keydown', (ke) => {
+        if (ke.key === 'Enter') { ke.preventDefault(); title.blur(); }
+        if (ke.key === 'Escape') { ke.preventDefault(); title.textContent = orig; title.blur(); }
+      }, { once: true });
+    });
     head.appendChild(title);
 
     if (isDirty) {
@@ -361,6 +409,35 @@ export default function RuleCanvas({
     pname.textContent = node.name;
     pname.addEventListener('click', (e) => e.stopPropagation());
     pname.addEventListener('mousedown', (e) => e.stopPropagation());
+    // 双击编辑分支名称
+    let renameBlurHandler: (() => void) | null = null;
+    pname.addEventListener('dblclick', (e) => {
+      if (!isDirty) return;
+      e.stopPropagation();
+      pname.contentEditable = 'true';
+      pname.focus();
+      const range = document.createRange();
+      range.selectNodeContents(pname);
+      const sel = window.getSelection();
+      if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+      const orig = pname.textContent || '';
+      const doBlur = () => {
+        pname.contentEditable = 'false';
+        const val = (pname.textContent || '').trim();
+        if (val && val !== orig) {
+          onRenameBranch?.(node.id, branch.id, val);
+        } else {
+          pname.textContent = orig;
+        }
+        if (renameBlurHandler) { pname.removeEventListener('blur', renameBlurHandler); renameBlurHandler = null; }
+      };
+      renameBlurHandler = doBlur;
+      pname.addEventListener('blur', doBlur);
+      pname.addEventListener('keydown', (ke) => {
+        if (ke.key === 'Enter') { ke.preventDefault(); pname.blur(); }
+        if (ke.key === 'Escape') { ke.preventDefault(); pname.textContent = orig; pname.blur(); }
+      }, { once: true });
+    });
     bh2.appendChild(pname);
 
     const bhs = document.createElement('div');
@@ -397,10 +474,10 @@ export default function RuleCanvas({
       const bcl = document.createElement('div');
       bcl.className = 'bcl';
 
-      // Connector spacer top
-      const csbTop = document.createElement('div');
-      csbTop.className = 'csb';
-      bcl.appendChild(csbTop);
+      // 分支顶部固定竖线
+      const cstTop = document.createElement('div');
+      cstTop.className = 'cst';
+      bcl.appendChild(cstTop);
 
       // Branch card
       const bcd = createBranchCard(node, branch);
@@ -417,15 +494,20 @@ export default function RuleCanvas({
 
         const nestedCtx = { parentNodeId: node.id, branchId: branch.id };
         bcl.appendChild(createConnector(nIdx + 1, nestedCtx));
-        bcl.appendChild(createNormalNode(nestedNode, nestedCtx));
+        // AND/OR 分支作为嵌套子节点时，渲染内部结构（带两个空分支）
+        if (nestedNode.type === 'and_branch' || nestedNode.type === 'or_branch') {
+          bcl.appendChild(createBranchNode(nestedNode));
+        } else {
+          bcl.appendChild(createNormalNode(nestedNode, nestedCtx));
+        }
       });
 
-      // Connector spacer bottom
+      // Connector spacer bottom - 将连接器和底部 spacer 包在一个容器中
       const csp = document.createElement('div');
       csp.className = 'csp';
       bcl.appendChild(csp);
 
-      // 分支末尾的加号（添加嵌套节点用），分支为空或已有节点时各一个
+      // 分支末尾的加号（添加嵌套节点用）
       if (isDirty) {
         bcl.appendChild(createConnector(branch.nested.length, { parentNodeId: node.id, branchId: branch.id }));
       }
@@ -473,6 +555,32 @@ export default function RuleCanvas({
     bcn.textContent = branch.name;
     bcn.addEventListener('click', (e) => e.stopPropagation());
     bcn.addEventListener('mousedown', (e) => e.stopPropagation());
+    // 双击编辑分支卡名称
+    bcn.addEventListener('dblclick', (e) => {
+      if (!isDirty) return;
+      e.stopPropagation();
+      bcn.contentEditable = 'true';
+      bcn.focus();
+      const range = document.createRange();
+      range.selectNodeContents(bcn);
+      const sel = window.getSelection();
+      if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+      const orig = branch.name;
+      const finish = () => {
+        bcn.contentEditable = 'false';
+        const val = (bcn.textContent || '').trim();
+        if (val && val !== orig) {
+          onRenameBranch?.(node.id, branch.id, val);
+        } else {
+          bcn.textContent = orig;
+        }
+      };
+      bcn.addEventListener('blur', finish, { once: true });
+      bcn.addEventListener('keydown', (ke) => {
+        if (ke.key === 'Enter') { ke.preventDefault(); bcn.blur(); }
+        if (ke.key === 'Escape') { ke.preventDefault(); bcn.textContent = orig; bcn.blur(); }
+      }, { once: true });
+    });
     bch.appendChild(bcn);
 
     if (isDirty) {

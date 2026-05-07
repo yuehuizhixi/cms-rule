@@ -399,6 +399,15 @@ export default function App() {
     setCanvasFlow(flow);
   }
 
+  function renameBranch(nodeId: string, branchId: string, newName: string) {
+    if (!isDirty || !newName.trim()) return;
+    const flow = JSON.parse(JSON.stringify(canvasFlow));
+    const node = flow.nodes[nodeId];
+    if (!node?.branches) return;
+    const branch = node.branches.find((b: any) => b.id === branchId);
+    if (branch) { branch.name = newName.trim(); setCanvasFlow(flow); }
+  }
+
   function deleteBranch(nodeId: string, branchId: string, ctx: { parentNodeId: string; branchId: string } | null) {
     if (!isDirty) return;
     const flow = JSON.parse(JSON.stringify(canvasFlow));
@@ -1199,11 +1208,11 @@ export default function App() {
 
         <div className="spacer" />
 
-        <button className="btn" id="btn-new-rule" onClick={openNewRuleModal}>＋ 新建规则</button>
+        <button className="btn primary" id="btn-new-rule" onClick={openNewRuleModal}>＋ 新建规则</button>
+        <button className="btn danger" id="btn-batch-del" onClick={batchDelete}>批量删除</button>
         <button className="btn" id="btn-batch-import" onClick={triggerImport}>批量导入</button>
         <button className="btn" id="btn-batch-export" onClick={exportRules}>批量导出</button>
-        <button className="btn" id="btn-view-all-logs" onClick={() => openLogModal()}>查看日志</button>
-        <button className="btn" id="btn-batch-del" onClick={batchDelete}>批量删除</button>
+        <button className="btn" id="btn-view-all-logs" onClick={() => openLogModal()} style={{gap:4}}>📋 查看日志</button>
       </div>
 
       {/* ===== Main Layout ===== */}
@@ -1271,30 +1280,31 @@ export default function App() {
                 <div className="rhn" id="rhn">{escHtml(currentRule.name)}</div>
                 <div className="rhd2" id="rhd2">{escHtml(currentRule.description) || "暂无描述"}</div>
               </div>
-              <div className="rha">
-                <button className={`btn ${!currentRule.enabled && !isDirty ? "" : "disabled"}`}
-                  id="btn-draw-rule-lock"
-                  onClick={enterEditMode}
-                  disabled={!!(currentRule.enabled || isDirty)}>
-                  {isDirty ? "编辑中" : "编辑规则"}
-                </button>
-                <button className="btn" id="btn-del-rule"
-                  disabled={!!currentRule.enabled}
-                  onClick={() => deleteRule(currentRuleId!)}>删除</button>
+              <div className="rha" style={{ position: "relative" }}>
                 <div className="zgp" style={{ display: isDirty ? "flex" : "none" }} id="zgp">
-                  <button id="btn-zin" onClick={zoomIn}>+</button>
-                  <span className="zvl" id="zvl" onDoubleClick={resetZoom}>{Math.round(canvasScale * 100)}%</span>
                   <button id="btn-zout" onClick={zoomOut}>−</button>
+                  <span className="zvl" id="zvl" onDoubleClick={resetZoom}>{Math.round(canvasScale * 100)}%</span>
+                  <button id="btn-zin" onClick={zoomIn}>+</button>
                   <button id="btn-zreset" onClick={resetZoom}>⟲</button>
                 </div>
                 <button className="btn" id="btn-save-rule" style={{ display: isDirty ? "inline-flex" : "none" }}
                   onClick={saveRule}>保存</button>
                 <button className="btn btn-draft" id="btn-draft-rule" style={{ display: isDirty ? "inline-flex" : "none" }}
                   onClick={draftRule}>暂存</button>
-                <button className="btn" id="btn-preview-rule" style={{ display: isDirty ? "inline-flex" : "none" }}
+                <button className="btn" id="btn-preview-rule" style={{ display: isDirty ? "inline-flex" : "none", color: "#7c3aed", borderColor: "#ddd6fe" }}
                   onClick={() => previewMode ? stopPreview() : startPreview()}>
                   {previewMode ? "退出预览" : "预览"}
                 </button>
+                <button className="btn danger" id="btn-del-rule"
+                  disabled={!!currentRule.enabled}
+                  onClick={() => deleteRule(currentRuleId!)}>删除</button>
+                {previewMode && (
+                  <div className="runtime-legend" id="runtime-legend" style={{ position: "absolute", top: "100%", right: 0, display: "block", marginTop: 4, pointerEvents: "all" }}>
+                    <div className="rl-title rl-pulse">👁 预览状态</div>
+                    <div className="rl-row"><span className="rl-dot green"></span>条件满足</div>
+                    <div className="rl-row"><span className="rl-dot red"></span>条件不满足</div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1313,6 +1323,11 @@ export default function App() {
               onDeleteNode={deleteNode}
               onDeleteBranch={deleteBranch}
               onAddBranch={addBranch}
+              onRenameBranch={renameBranch}
+              onNodeNameChange={(nid, newName) => {
+                const flow = JSON.parse(JSON.stringify(canvasFlow));
+                if (flow.nodes[nid]) { flow.nodes[nid].name = newName; setCanvasFlow(flow); }
+              }}
               onOpenDrawer={openDrawer}
               onScaleChange={(delta) => setCanvasScale(s => Math.min(2, Math.max(0.3, s * delta)))}
               onOffsetChange={setCanvasOffset}
@@ -1339,15 +1354,6 @@ export default function App() {
             </div>
           )}
 
-          {/* Runtime Legend */}
-          {previewMode && (
-            <div className="runtime-legend show" id="runtime-legend">
-              <div className="rl-title">运行状态</div>
-              <div className="rl-row"><div className="rl-dot green rl-pulse" /><span>通过</span></div>
-              <div className="rl-row"><div className="rl-dot red" /><span>不满足</span></div>
-              <div className="rl-row"><div className="rl-dot gray" /><span>未执行</span></div>
-            </div>
-          )}
         </div>
       </div>
 
