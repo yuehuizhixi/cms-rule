@@ -347,7 +347,7 @@ function ConditionBuilder({ config, onChange, onOpenParamPicker }: ConditionBuil
               <pre className="sr-code">{`if <%对象名/参数名%> > 12:\n    return True\nelse:\n    return False`}</pre>
             </div>
             <div className="sr-hint" style={{ marginTop: '6px' }}>
-              参数引用格式：<code>{`<%参数名%>`}</code>　　返回 <code>1</code>/
+              参数引用格式：<code>{`<%对象名/参数名%>`}</code>　　返回 <code>1</code>/
               <code>True</code> 表示条件成立，<code>0</code>/
               <code>False</code> 表示不成立
             </div>
@@ -897,7 +897,7 @@ function ModifyBuilder({ config, onChange, onOpenParamPicker }: ModifyBuilderPro
           </button>
         </div>
         <div className="hint">
-          表达式以 = 开头，引用参数：<code>{`<%参数名%>`}</code>，支持 +-*/
+          表达式以 = 开头，引用参数：<code>{`<%对象名/参数名%>`}</code>，支持 +-*/
         </div>
       </div>
       <div className="field">

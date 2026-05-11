@@ -176,78 +176,78 @@ export default function RuleCanvas({
     requestAnimationFrame(() => requestAnimationFrame(syncHeights));
   }, [flow, isDirty, nodeStatuses, branchStatuses]);
 
-  // ── 路由跳转线渲染 ──
+  // ── 路由跳转线渲染（对齐原型 mt() 函数） ──
   useEffect(() => {
-    if (!containerRef.current || !canvasRef.current) return;
-    const container = containerRef.current;
-    const canvas = canvasRef.current;
+    if (!canvasRef.current) return;
+    const canvasEl = canvasRef.current;
 
-    const renderRouteLines = () => {
-      // 移除旧的 SVG overlay
-      const oldSvg = container.querySelector('.rto');
-      if (oldSvg) oldSvg.remove();
+    // 移除旧的 SVG overlay
+    const oldSvg = canvasEl.querySelector('.rto');
+    if (oldSvg) oldSvg.remove();
 
-      const routes = Object.values(flow.nodes).filter(
-        (n: any) => n.type === 'route' && n.config?.targetId
-      );
-      if (routes.length === 0) return;
+    const routes = Object.values(flow.nodes).filter(
+      (n: any) => n.type === 'route' && n.config?.targetId
+    );
+    if (routes.length === 0) return;
 
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('class', 'rto');
-      svg.style.cssText = 'position:absolute;top:0;left:0;width:1px;height:1px;overflow:visible;pointer-events:none;z-index:5';
+    // 工具函数：获取 node 在 canvas 内部的坐标（对齐原型 ut()）
+    function getNodeCanvasPos(id: string) {
+      const el = canvasEl.querySelector(`[data-node-id="${id}"]`);
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      const c = canvasEl.getBoundingClientRect();
+      return {
+        left: (r.left - c.left) / scale,
+        top: (r.top - c.top) / scale,
+        width: r.width / scale,
+        height: r.height / scale,
+      };
+    }
 
-      // 箭头标记
-      const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-      defs.innerHTML = '<marker id="arr-route" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3b6ef5"/></marker>';
-      svg.appendChild(defs);
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'rto');
+    svg.style.cssText = 'position:absolute;top:0;left:0;width:1px;height:1px;overflow:visible;pointer-events:none;z-index:5';
 
-      const canvasRect = canvas.getBoundingClientRect();
+    // 箭头标记
+    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+    defs.innerHTML = '<marker id="arr-route" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3b6ef5"/></marker>';
+    svg.appendChild(defs);
 
-      routes.forEach((routeNode: any) => {
-        const targetNode = flow.nodes[routeNode.config?.targetId];
-        if (!targetNode) return;
+    routes.forEach((routeNode: any) => {
+      const src = getNodeCanvasPos(routeNode.id);
+      const tgt = getNodeCanvasPos(routeNode.config.targetId);
+      if (!src || !tgt) return;
 
-        const srcEl = container.querySelector(`[data-node-id="${routeNode.id}"]`);
-        const tgtEl = container.querySelector(`[data-node-id="${targetNode.id}"]`);
-        if (!srcEl || !tgtEl) return;
+      const x1 = src.left + src.width;
+      const y1 = src.top + src.height / 2;
+      const x2 = tgt.left + tgt.width;
+      const y2 = tgt.top + tgt.height / 2;
 
-        const srcRect = srcEl.getBoundingClientRect();
-        const tgtRect = tgtEl.getBoundingClientRect();
+      const gap = routeNode.config?.routeOffset || 70;
+      const midX = Math.max(x1, x2) + gap;
 
-        const offset = routeNode.config?.routeOffset || 70;
+      const d = `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2 + 4} ${y2}`;
 
-        // 计算相对于 canvas 的位置
-        const x1 = srcRect.left - canvasRect.left + srcRect.width;
-        const y1 = srcRect.top - canvasRect.top + srcRect.height / 2;
-        const x2 = tgtRect.left - canvasRect.left + tgtRect.width;
-        const y2 = tgtRect.top - canvasRect.top + tgtRect.height / 2;
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', d);
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke', '#3b6ef5');
+      path.setAttribute('stroke-width', '2');
+      path.setAttribute('marker-end', 'url(#arr-route)');
+      svg.appendChild(path);
 
-        const midX = Math.max(x1, x2) + offset;
+      // 跳转目标标签
+      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      text.setAttribute('x', String(midX + 10));
+      text.setAttribute('y', String((y1 + y2) / 2 - 4));
+      text.setAttribute('fill', '#3b6ef5');
+      text.setAttribute('font-size', '11');
+      text.textContent = '跳转至：' + (flow.nodes[routeNode.config.targetId]?.name || '?');
+      svg.appendChild(text);
+    });
 
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        const d = `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2 + 4} ${y2}`;
-        path.setAttribute('d', d);
-        path.setAttribute('fill', 'none');
-        path.setAttribute('stroke', '#3b6ef5');
-        path.setAttribute('stroke-width', '2');
-        path.setAttribute('marker-end', 'url(#arr-route)');
-        svg.appendChild(path);
-
-        // 目标标签
-        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        text.setAttribute('x', String(midX + 10));
-        text.setAttribute('y', String((y1 + y2) / 2 - 4));
-        text.setAttribute('fill', '#3b6ef5');
-        text.setAttribute('font-size', '11');
-        text.textContent = '跳转至：' + targetNode.name;
-        svg.appendChild(text);
-      });
-
-      container.appendChild(svg);
-    };
-
-    requestAnimationFrame(() => requestAnimationFrame(renderRouteLines));
-  }, [flow]);
+    canvasEl.appendChild(svg);
+  }, [flow, scale, offset]);
 
   // Handle scroll to node request
   useEffect(() => {

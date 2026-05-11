@@ -1638,13 +1638,15 @@ export default function App() {
           {NODE_TYPE_KEYS.map(key => {
             const nt = NODE_TYPES[key];
             const inBranch = !!nodeMenuCtx?.ctx;
-            const isFirstPlus = !nodeMenuCtx?.ctx && canvasFlow.mainFlow.filter(id => canvasFlow.nodes[id]?.type !== 'timer').length === 0;
+            // 仅在 mainFlow 的 index=0 处的加号（开始下方的首个加号）允许添加定时器
+            const isFirstSlot = !nodeMenuCtx?.ctx && nodeMenuCtx?.index === 0;
+            const hasTimerInFlow = canvasFlow.mainFlow.some(id => canvasFlow.nodes[id]?.type === 'timer');
             // 分支内部: 仅可添加 rule/and_branch/or_branch
             // mainFlow 首个加号（mainFlow 为空或仅有 timer）: 所有类型可选
             // mainFlow 非首个加号: timer 不可选（只能一个 timer 且必须在开头）
             const disabled = inBranch
               ? (key === 'timer' || key === 'delay' || key === 'modify' || key === 'route')
-              : (key === 'timer' && !isFirstPlus);
+              : (key === 'timer' && (!isFirstSlot || hasTimerInFlow));
             return (
               <div key={key}
                 className={`nmm-item ${disabled ? 'disabled' : ''}`}
