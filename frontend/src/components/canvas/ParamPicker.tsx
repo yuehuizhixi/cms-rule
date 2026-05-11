@@ -146,7 +146,10 @@ export default function ParamPicker({ open, currentParam, onSelect, onClose }: P
     setLpage(1); setLm(''); setLd(''); setLp('');
     setTreeModel('mode'); setTreeEnergy(''); setTreePersp('');
     setTRoots([]); setTSelId(null); setTp([]); setTPath([]);
+    setExpK(new Set());
     setTreeTypeEnergies([]);
+    setPerspectives([]);
+    perspectivesLoadedRef.current = false;
     setTm(''); setTd(''); setTparam('');
     // 如果视角还没加载过，加载一次
     if (!perspectivesLoadedRef.current) loadPerspectives();
@@ -162,52 +165,90 @@ export default function ParamPicker({ open, currentParam, onSelect, onClose }: P
         setPerspectives(d);
         perspectivesLoadedRef.current = true;
         // 设置默认视角
-        if (d.length > 0) setTreePersp(d[0].dictionaryVal);
+        if (d.length > 0) {
+          setTreePersp(d[0].dictionaryVal);
+        }
       }
     } catch {}
   }
 
-  // ── 模型切换 ──
+
+
+  // ── Tab 切换到结构树时，直接加载数据 ──
   useEffect(() => {
     if (!open || tab !== 'tree') return;
-    // 先清空树
+    // 清空旧数据
     setTRoots([]); setTSelId(null); setTp([]); setTPath([]); setExpK(new Set());
+    setTreeEnergy(''); setTreePersp('');
+    setTreeTypeEnergies([]);
 
-    if (treeModel === 'mode') {
-      // 参照：getEnergyList() → 请求能流模型能源类型
-      setTreeEnergy('elc');
-      (async () => {
-        try {
-          const r = await post('/energyInfo/queryCache', { type: 'ALL' });
-          const d = exData(r);
-          if (Array.isArray(d)) { setTreeTypeEnergies(d); }
-        } catch {}
-      })();
-    } else if (treeModel === 'emission') {
-      // 参照：getEmissionList() → 请求排放模型能源类型
-      setTreeEnergy('');
-      (async () => {
-        try {
-          const r = await post('/emissionInfo/queryCacheAll', { pageNo: 1, limit: 100 });
-          const d = exData(r);
-          if (Array.isArray(d)) { setTreeTypeEnergies(mapEmissionTypes(d)); }
-        } catch {}
-      })();
-    } else if (treeModel === 'uc') {
-      setTreeEnergy('');
-      setTreePersp('');
-      // 参照：getTreeList()，type 传 device 而非 uc
+    if (treeModel === 'uc') {
       loadUCTree();
-      return;
-    }
-  }, [treeModel]);
+    } else {
+      // 获取默认视角
+      const defaultPersp = perspectives.length > 0
+        ? perspectives[0].dictionaryVal
+        : 'default';
+      setTreeEnergy('elc');
+      setTreePersp(defaultPersp);
 
-  // ── 类型或视角变化时自动加载树（参照：选择后自动 getTreeData） ──
+      // 用确定值直接调 loadTree，不依赖状态更新的时序
+      doLoadTree(treeModel, 'elc', defaultPersp);
+
+      // 异步加载能源类型列表（仅用于下拉菜单，不影响树加载）
+      setTimeout(async () => {
+        try {
+          const h = await post('/energyInfo/queryCache', { type: 'ALL' });
+          const d = exData(h);
+          if (Array.isArray(d)) setTreeTypeEnergies(d);
+        } catch {}
+      }, 0);
+
+      // 视角列表如果还没加载，也异步加载（仅用于下拉菜单）
+      if (!perspectivesLoadedRef.current) {
+        setTimeout(async () => {
+          try {
+            const r = await post('/dictionary/queryCacheQuery', { configCode: 'perspective', type: 'perspective', limit: 1000, pageNo: 1 });
+            const d = exData(r);
+            if (Array.isArray(d)) {
+              setPerspectives(d);
+              perspectivesLoadedRef.current = true;
+            }
+          } catch {}
+        }, 0);
+      }
+    }
+  }, [tab]);
+
+  function doLoadTree(modelType: string, energyCode: string, perspective: string) {
+    if (modelType === 'uc') { loadUCTree(); return; }
+    setTload(true); setTRoots([]);
+    const body = { energyCode, perspective, type: modelType, bindType: modelType };
+    post('/locationTree/query', body).then(raw => {
+      const d = exData(raw);
+      const roots: LocNode[] = Array.isArray(d) ? d : [];
+      setTRoots(roots);
+      if (roots.length > 0) {
+        setTSelId(roots[0].id);
+        setTSelTopParentId(roots[0].topParentId || '');
+        setTPath([roots[0]]);
+        setExpK(new Set([roots[0].id]));
+        loadTreeParamsNormal(roots[0].id);
+      }
+    }).catch(() => {
+      setTRoots([]);
+    }).finally(() => {
+      setTload(false);
+    });
+  }
+
+  // ── 模型切换（能源类型/视角下拉变更时重新加载树） ──
   useEffect(() => {
     if (!open || tab !== 'tree' || treeModel === 'uc') return;
     if (!treeEnergy || !treePersp) return;
-    loadTree();
-  }, [treeEnergy, treePersp]);
+    setTRoots([]); setTSelId(null); setTp([]); setTPath([]); setExpK(new Set());
+    doLoadTree(treeModel, treeEnergy, treePersp);
+  }, [treeModel, treeEnergy, treePersp]);
 
   // ── UC 专用：树加载（无类型+视角） ──
   async function loadUCTree() {
@@ -248,7 +289,7 @@ export default function ParamPicker({ open, currentParam, onSelect, onClose }: P
     } catch { setTRoots([]); } finally { setTload(false); }
   }
 
-  // ── 树参数加载：普通模式（mode/emission） ──
+  // ── 树参数加载：普通模式（mode/emission）──
   async function loadTreeParamsNormal(locId: string, pg?: number) {
     const page = pg ?? tpPage;
     setTpload(true); setTp([]);
@@ -309,11 +350,27 @@ export default function ParamPicker({ open, currentParam, onSelect, onClose }: P
     } catch { setTp([]); setTpTotal(0); } finally { setTpload(false); }
   }
 
+  // ── 根据当前选中的树根节点重建面包屑路径 ──
+  function rebuildPath(node: LocNode, roots: LocNode[]): LocNode[] {
+    // 如果是根节点（在 roots 数组里），直接返回
+    if (roots.some(r => r.id === node.id)) return [node];
+    // 否则从当前路径追加（由父级展开点击传递）
+    return [node];
+  }
+
   function clickNode(node: LocNode) {
     setTSelId(node.id);
     setTSelTopParentId(node.topParentId || '');
-    setTPath(prev => { const i = prev.findIndex(p => p.id === node.id); return i >= 0 ? prev.slice(0, i + 1) : [...prev, node]; });
-    setExpK(prev => { const n = new Set(prev); n.has(node.id) ? n.delete(node.id) : n.add(node.id); return n; });
+    // 路径只做截断或追加子树，不做同级替换
+    setTPath(prev => {
+      const idx = prev.findIndex(p => p.id === node.id);
+      if (idx >= 0) return prev.slice(0, idx + 1);
+      // 如果 node 是顶层根节点之一（兄弟关系），替换而非追加
+      if (tRoots.some(r => r.id === node.id)) return [node];
+      return [...prev, node];
+    });
+    // 展开当前节点（只展开不折叠）
+    setExpK(prev => new Set(prev).add(node.id));
     setTpPage(1);
     if (treeModel === 'uc') {
       loadTreeParamsUC(node.id, node.topParentId || '', 1);
@@ -389,14 +446,14 @@ export default function ParamPicker({ open, currentParam, onSelect, onClose }: P
             </div>
             <div className="prm-table-wrap">
               <table className="prm-table"><thead><tr>
-                <th style={{ width: 36 }}></th><th>对象标识</th><th>对象名称</th><th>模型标识</th><th>模型名称</th><th>参数标识</th><th>参数名称</th>
+                <th style={{ width: 36 }}></th><th>模型标识</th><th>模型名称</th><th>对象标识</th><th>对象名称</th><th>参数标识</th><th>参数名称</th>
               </tr></thead><tbody>
                 {lload ? <tr><td colSpan={7} className="prm-empty">加载中…</td></tr> :
                  list.length === 0 ? <tr><td colSpan={7} className="prm-empty">暂无数据</td></tr> :
                  list.map(it => { const r = ref(it); const sel = selRef === r;
                    return (<tr key={it.key} className={`prm-row${sel ? ' selected' : ''}`} onClick={() => handleSel(it)}>
                      <td><input type="radio" name="prm-l" checked={sel} onChange={() => handleSel(it)} /></td>
-                     <td className="prm-mono">{it.deviceMark}</td><td>{it.deviceName}</td><td className="prm-mono">{it.modelMark}</td><td>{it.modelName}</td><td className="prm-mono">{it.paramMark}</td><td>{it.paramName}</td>
+                     <td className="prm-mono">{it.modelMark}</td><td>{it.modelName}</td><td className="prm-mono">{it.deviceMark}</td><td>{it.deviceName}</td><td className="prm-mono">{it.paramMark}</td><td>{it.paramName}</td>
                    </tr>);
                  })}
               </tbody></table>

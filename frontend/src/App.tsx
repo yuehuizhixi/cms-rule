@@ -15,6 +15,15 @@ interface LogEntry { id: string; ts: Date; ruleId: string; ruleName: string; gro
 function uid(prefix: string): string { return prefix + "_" + Math.random().toString(36).slice(2, 9); }
 function escHtml(s: string): string { return ((s || "") + "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] || c)); }
 function pollToSeconds(p: PollInterval): number { return 86400 * (p.d || 0) + 3600 * (p.h || 0) + 60 * (p.m || 0) + (p.s || 0); }
+function pollToDisplay(p: PollInterval): string {
+  const parts: string[] = [];
+  if (p.d) parts.push(p.d + "天");
+  if (p.h) parts.push(p.h + "时");
+  if (p.m) parts.push(p.m + "分");
+  if (!p.s && (p.d || p.h || p.m)) parts.push("0秒");
+  else if (p.s !== undefined) parts.push(p.s + "秒");
+  return parts.join("") || "30秒";
+}
 function pollToStr(p: PollInterval): string {
   const parts: string[] = [];
   if (p.d) parts.push(p.d + "天");
@@ -78,6 +87,16 @@ export default function App() {
   const [logModalOpen, setLogModalOpen] = useState(false);
   const [logRuleId, setLogRuleId] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<{ ok: string[]; drafted: string[]; skipped: { name: string; reason: string }[] } | null>(null);
+  const [confirmModalVisible, setConfirmModalVisible] = useState(false);
+  const [confirmModalContent, setConfirmModalContent] = useState<{
+    title: string;
+    body: React.ReactNode;
+    onConfirm: () => void;
+    onCancel?: () => void;
+    confirmText?: string;
+    cancelText?: string;
+    danger?: boolean;
+  } | null>(null);
   // Drawer
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerCtx, setDrawerCtx] = useState<{ kind: "node" | "branch_group"; nodeId: string; branchId?: string } | null>(null);
@@ -142,6 +161,19 @@ export default function App() {
 
   // --- Derived ---
   const currentGroup = groups.find(g => g.id === currentTabId);
+  function showConfirmModal(opts: {
+    title: string;
+    body: React.ReactNode;
+    onConfirm: () => void;
+    onCancel?: () => void;
+    confirmText?: string;
+    cancelText?: string;
+    danger?: boolean;
+  }) {
+    setConfirmModalContent(opts);
+    setConfirmModalVisible(true);
+  }
+
   const currentRule = currentGroup?.rules.find(r => r.id === currentRuleId);
   const allRules = groups.flatMap(g => g.rules);
   const filteredRules = sortRules(
@@ -249,7 +281,7 @@ export default function App() {
   }
 
   async function renameTab(tabId: string, newName: string) {
-    if (!newName.trim()) return;
+    if (!newName.trim()) { setTabEditing(null); return; }
     try {
       await api.updateGroup(tabId, newName.trim());
       await loadData();
@@ -287,7 +319,56 @@ export default function App() {
 
   async function toggleRuleEnabled(rule: Rule, checked: boolean) {
     if (checked && rule.drafted) { showToast("请完成规则配置后再开启规则"); return; }
-    if (!confirm(`确认${checked ? "启用" : "停用"}规则？`)) return;
+    const isEnable = checked;
+    const pollStr = pollToDisplay(rule.poll);
+    const warning = isEnable
+      ? "启用后，该规则将按设定的轮询间隔自动运行，可能对项目数据产生实际影响。"
+      : "停用后，该规则将立即停止执行，请确认当前无依赖此规则的关键业务正在运行。";
+    showConfirmModal({
+      title: `确认${isEnable ? "启用" : "停用"}规则？`,
+      confirmText: isEnable ? "确认启用" : "确认停用",
+      danger: !isEnable,
+      onConfirm: async () => {
+        try {
+          await api.updateRuleStatus(rule.id, isEnable ? "ACTIVE" : "INACTIVE");
+          const resp = await api.getGroups();
+          const data = resp.data;
+          const freshGroups: Group[] = (data?.groups || []).map((g: any) => ({
+            id: g.id, name: g.name,
+            rules: (data?.rules || []).filter((r: any) => r.groupId === g.id).map((r: any) => ({
+              id: r.id, name: r.name, description: r.description || "",
+              enabled: r.status === "ACTIVE", drafted: r.status === "DRAFT",
+              poll: secondsToPoll(r.pollInterval),
+              flow: parseFlow(r.flow),
+            }))
+          }));
+          setGroups(freshGroups);
+          if (currentRuleId) {
+            const grp = freshGroups.find(g => g.id === currentTabId);
+            const fresh = grp?.rules.find(r => r.id === currentRuleId);
+            if (fresh) {
+              const flow = fresh.flow || createEmptyFlow();
+              setCanvasFlow(JSON.parse(JSON.stringify(flow)));
+            }
+          }
+          showToast(isEnable ? "规则已启用" : "规则已停用");
+        } catch { showToast("操作失败"); }
+      },
+      body: (
+        <div>
+          <div style={{ marginBottom: 16, lineHeight: 1.8 }}>
+            <div><span style={{ color: "var(--muted)" }}>规则名称：</span>{escHtml(rule.name)}</div>
+            <div><span style={{ color: "var(--muted)" }}>规则描述：</span>{escHtml(rule.description || "暂无描述")}</div>
+            <div><span style={{ color: "var(--muted)" }}>轮询间隔：</span>{pollStr}</div>
+          </div>
+          <div style={{ color: "var(--warn)", fontSize: 12, lineHeight: 1.6 }}>
+            ⚠️ {warning}
+            <br />
+            请确认操作符合预期后再继续。
+          </div>
+        </div>
+      ),
+    });
     try {
       await api.updateRuleStatus(rule.id, checked ? "ACTIVE" : "INACTIVE");
       // 直接拉取最新数据刷新列表和画布
@@ -686,7 +767,9 @@ export default function App() {
   function onCanvasMouseDown(e: React.MouseEvent) {
     if (!currentRuleId) return;
     const target = e.target as HTMLElement;
-    if (target.closest(".node") || target.closest(".bcd") || target.closest(".plus") || target.closest(".bh2")) return;
+    if (target.closest(".node") || target.closest(".bcd") || target.closest(".plus") || target.closest(".bh2") || target.closest(".nmm")) return;
+    // 点击视图空白处关闭节点类型菜单
+    if (nodeMenuVisible) setNodeMenuVisible(false);
     isDragging.current = true;
     dragStart.current = { x: e.clientX, y: e.clientY };
     dragOffset.current = { ...canvasOffset };
@@ -1542,11 +1625,14 @@ export default function App() {
           <div className="nmm-title">选择节点类型</div>
           {NODE_TYPE_KEYS.map(key => {
             const nt = NODE_TYPES[key];
-            const isTimerBlocked = key === 'timer' && (hasTimerNode || canvasFlow.mainFlow.length > 0);
-            const isBranchOnly = key === 'timer' || key === 'delay' || key === 'modify' || key === 'route';
             const inBranch = !!nodeMenuCtx?.ctx;
-            const disabled = (key === 'timer' && (hasTimerNode || canvasFlow.mainFlow.length > 0))
-              || (inBranch && (key === 'timer' || key === 'delay' || key === 'modify' || key === 'route'));
+            const isFirstPlus = !nodeMenuCtx?.ctx && canvasFlow.mainFlow.filter(id => canvasFlow.nodes[id]?.type !== 'timer').length === 0;
+            // 分支内部: 仅可添加 rule/and_branch/or_branch
+            // mainFlow 首个加号（mainFlow 为空或仅有 timer）: 所有类型可选
+            // mainFlow 非首个加号: timer 不可选（只能一个 timer 且必须在开头）
+            const disabled = inBranch
+              ? (key === 'timer' || key === 'delay' || key === 'modify' || key === 'route')
+              : (key === 'timer' && !isFirstPlus);
             return (
               <div key={key}
                 className={`nmm-item ${disabled ? 'disabled' : ''}`}
@@ -1566,15 +1652,30 @@ export default function App() {
         accept=".json,.zip" multiple onChange={handleFileImport} />
 
       {/* ===== Confirm Modal ===== */}
-      <div className="mma" id="modal-mask">
-        <div className="modal" id="modal">
-          <h3>确认</h3>
-          <p id="modal-body" />
-          <div className="actions">
-            <button className="btn" id="modal-no">取消</button>
-            <button className="btn primary" id="modal-yes">确认</button>
+      <div className={`mma ${confirmModalVisible ? "show" : ""}`} onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          setConfirmModalVisible(false);
+          confirmModalContent?.onCancel?.();
+        }
+      }}>
+        {confirmModalContent && (
+          <div className="modal" style={{ maxWidth: 520 }}>
+            <h3>{confirmModalContent.title}</h3>
+            {typeof confirmModalContent.body === "string"
+              ? <p>{confirmModalContent.body}</p>
+              : <div style={{ marginBottom: 18, lineHeight: 1.6, fontSize: 13, color: "#5a6378" }}>{confirmModalContent.body}</div>}
+            <div className="actions">
+              <button className="btn" onClick={() => {
+                setConfirmModalVisible(false);
+                confirmModalContent?.onCancel?.();
+              }}>{confirmModalContent.cancelText || "取消"}</button>
+              <button className={`btn ${confirmModalContent.danger ? "danger" : "primary"}`} onClick={() => {
+                setConfirmModalVisible(false);
+                confirmModalContent.onConfirm();
+              }}>{confirmModalContent.confirmText || "确认"}</button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

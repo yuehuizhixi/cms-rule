@@ -70,7 +70,7 @@ public class RuleService {
                 .name(req.getName())
                 .description(req.getDescription() != null ? req.getDescription() : "")
                 .pollInterval(pollInterval)
-                .status(RuleStatus.DRAFT)
+                .status(RuleStatus.INACTIVE)
                 .flow("{\"nodes\":{},\"mainFlow\":[]}")
                 .build();
         Rule saved = ruleRepository.save(rule);

@@ -176,6 +176,79 @@ export default function RuleCanvas({
     requestAnimationFrame(() => requestAnimationFrame(syncHeights));
   }, [flow, isDirty, nodeStatuses, branchStatuses]);
 
+  // ── 路由跳转线渲染 ──
+  useEffect(() => {
+    if (!containerRef.current || !canvasRef.current) return;
+    const container = containerRef.current;
+    const canvas = canvasRef.current;
+
+    const renderRouteLines = () => {
+      // 移除旧的 SVG overlay
+      const oldSvg = container.querySelector('.rto');
+      if (oldSvg) oldSvg.remove();
+
+      const routes = Object.values(flow.nodes).filter(
+        (n: any) => n.type === 'route' && n.config?.targetId
+      );
+      if (routes.length === 0) return;
+
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('class', 'rto');
+      svg.style.cssText = 'position:absolute;top:0;left:0;width:1px;height:1px;overflow:visible;pointer-events:none;z-index:5';
+
+      // 箭头标记
+      const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+      defs.innerHTML = '<marker id="arr-route" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3b6ef5"/></marker>';
+      svg.appendChild(defs);
+
+      const canvasRect = canvas.getBoundingClientRect();
+
+      routes.forEach((routeNode: any) => {
+        const targetNode = flow.nodes[routeNode.config?.targetId];
+        if (!targetNode) return;
+
+        const srcEl = container.querySelector(`[data-node-id="${routeNode.id}"]`);
+        const tgtEl = container.querySelector(`[data-node-id="${targetNode.id}"]`);
+        if (!srcEl || !tgtEl) return;
+
+        const srcRect = srcEl.getBoundingClientRect();
+        const tgtRect = tgtEl.getBoundingClientRect();
+
+        const offset = routeNode.config?.routeOffset || 70;
+
+        // 计算相对于 canvas 的位置
+        const x1 = srcRect.left - canvasRect.left + srcRect.width;
+        const y1 = srcRect.top - canvasRect.top + srcRect.height / 2;
+        const x2 = tgtRect.left - canvasRect.left + tgtRect.width;
+        const y2 = tgtRect.top - canvasRect.top + tgtRect.height / 2;
+
+        const midX = Math.max(x1, x2) + offset;
+
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        const d = `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2 + 4} ${y2}`;
+        path.setAttribute('d', d);
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke', '#3b6ef5');
+        path.setAttribute('stroke-width', '2');
+        path.setAttribute('marker-end', 'url(#arr-route)');
+        svg.appendChild(path);
+
+        // 目标标签
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('x', String(midX + 10));
+        text.setAttribute('y', String((y1 + y2) / 2 - 4));
+        text.setAttribute('fill', '#3b6ef5');
+        text.setAttribute('font-size', '11');
+        text.textContent = '跳转至：' + targetNode.name;
+        svg.appendChild(text);
+      });
+
+      container.appendChild(svg);
+    };
+
+    requestAnimationFrame(() => requestAnimationFrame(renderRouteLines));
+  }, [flow]);
+
   // Handle scroll to node request
   useEffect(() => {
     if (scrollToNodeId && canvasRef.current) {
@@ -198,12 +271,8 @@ export default function RuleCanvas({
     term.textContent = '开始';
     container.appendChild(term);
 
-    if (isDirty && flow.mainFlow.length > 0) {
-      container.appendChild(createConnector(0, null));
-    }
-    if (isDirty && flow.mainFlow.length === 0) {
-      container.appendChild(createConnector(0, null));
-    }
+    // 始终渲染 connector，编辑模式可交互，非编辑模式只有视觉效果
+    container.appendChild(createConnector(0, null));
 
     return container;
   }
@@ -267,15 +336,14 @@ export default function RuleCanvas({
         nodeContainer.appendChild(createNormalNode(node, null));
       }
 
-      if (isDirty) {
-        nodeContainer.appendChild(createConnector(idx + 1, null));
-      }
+      // 始终渲染 connector
+      nodeContainer.appendChild(createConnector(idx + 1, null));
 
       container.appendChild(nodeContainer);
     });
 
     // Empty main flow
-    if (flow.mainFlow.length === 0 && isDirty) {
+    if (flow.mainFlow.length === 0) {
       const emptyContainer = document.createElement('div');
       emptyContainer.style.cssText = 'display:flex;flex-direction:column;align-items:center';
       emptyContainer.appendChild(createConnector(0, null));
@@ -507,10 +575,8 @@ export default function RuleCanvas({
       csp.className = 'csp';
       bcl.appendChild(csp);
 
-      // 分支末尾的加号（添加嵌套节点用）
-      if (isDirty) {
-        bcl.appendChild(createConnector(branch.nested.length, { parentNodeId: node.id, branchId: branch.id }));
-      }
+      // 分支末尾的加号
+      bcl.appendChild(createConnector(branch.nested.length, { parentNodeId: node.id, branchId: branch.id }));
 
       const csbBottom = document.createElement('div');
       csbBottom.className = 'csb';

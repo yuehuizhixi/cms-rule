@@ -635,8 +635,10 @@ body, html {
 
 .conn .line { width: 2px; height: 22px; background: #c8cfdc }
 
-.cw:not(.editing) .plus { display: none }
-.cw:not(.editing) .conn .line:first-child { height: 44px }
+.cw:not(.editing) .plus {
+  pointer-events: none;
+  opacity: 0.6;
+}
 
 /* ===== Plus Button ===== */
 .plus {
@@ -1866,6 +1868,7 @@ body, html {
   background: #fff;
   border-radius: 10px;
   width: 960px;
+  min-height: 560px;
   max-height: 80vh;
   display: flex;
   flex-direction: column;
@@ -1913,6 +1916,7 @@ body, html {
   flex-direction: column;
   padding: 12px 20px;
   overflow: hidden;
+  min-height: 0;
 }
 .prm-list-filters {
   display: flex;
@@ -1948,6 +1952,7 @@ body, html {
 .prm-table-wrap {
   flex: 1;
   overflow: auto;
+  min-height: 0;
 }
 .prm-table {
   width: 100%;
@@ -2015,6 +2020,7 @@ body, html {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 0;
 }
 .prm-tree-filterbar {
   display: flex;
