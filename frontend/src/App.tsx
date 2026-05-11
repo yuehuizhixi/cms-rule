@@ -218,6 +218,18 @@ export default function App() {
 
   useEffect(() => { loadData(); }, []);
 
+  // 全局点击关闭节点类型菜单
+  useEffect(() => {
+    function handleGlobalClick(e: MouseEvent) {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.nmm') && !target.closest('.plus') && nodeMenuVisible) {
+        setNodeMenuVisible(false);
+      }
+    }
+    document.addEventListener('mousedown', handleGlobalClick, true);
+    return () => document.removeEventListener('mousedown', handleGlobalClick, true);
+  }, [nodeMenuVisible]);
+
   // --- Poll Interval Helpers ---
   function secondsToPoll(s: number): PollInterval {
     const d = Math.floor(s / 86400); s %= 86400;

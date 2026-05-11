@@ -4,7 +4,7 @@
  * 对应原型的 drawer.js，负责渲染各节点类型的配置表单
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import type { FlowNode, Flow, Branch } from './RuleCanvas';
 import { NODE_TYPES, OPERATORS } from './RuleCanvas';
 
@@ -215,6 +215,24 @@ interface ConditionBuilderProps {
 
 function ConditionBuilder({ config, onChange, onOpenParamPicker }: ConditionBuilderProps) {
   const condMode = config.condMode || 'param';
+  const scriptRef = useRef<HTMLTextAreaElement>(null);
+
+  function insertParamAtCursor(paramRef: string) {
+    if (!scriptRef.current) return;
+    const ta = scriptRef.current;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const before = (config.script || '').slice(0, start);
+    const after = (config.script || '').slice(end);
+    const newVal = before + paramRef + after;
+    onChange({ ...config, script: newVal });
+    // 光标移到插入内容之后
+    requestAnimationFrame(() => {
+      const pos = start + paramRef.length;
+      ta.setSelectionRange(pos, pos);
+      ta.focus();
+    });
+  }
 
   return (
     <div>
@@ -294,6 +312,10 @@ function ConditionBuilder({ config, onChange, onOpenParamPicker }: ConditionBuil
                   onChange={(e) => onChange({ ...config, max: e.target.value })}
                 />
               </div>
+              {config.min !== '' && config.max !== '' && config.min !== undefined && config.max !== undefined &&
+                Number(config.min) >= Number(config.max) && (
+                <div className="ferr">最小值不能大于等于最大值</div>
+              )}
             </div>
           ) : (
             <div className="field">
@@ -318,11 +340,11 @@ function ConditionBuilder({ config, onChange, onOpenParamPicker }: ConditionBuil
               <div className="sr-hint">
                 规则前需加 <code>return </code>（return + 一个空格）
               </div>
-              <pre className="sr-code">{`return 1 if <%PriChWTempSupply01%> > 12 else 0`}</pre>
+              <pre className="sr-code">{`return 1 if <%对象名/参数名%> > 12 else 0`}</pre>
             </div>
             <div className="sr-section">
               <div className="sr-label">写法 2：多行 Python if 判断语句</div>
-              <pre className="sr-code">{`if <%PriChWTempSupply01%> > 12:\n    return True\nelse:\n    return False`}</pre>
+              <pre className="sr-code">{`if <%对象名/参数名%> > 12:\n    return True\nelse:\n    return False`}</pre>
             </div>
             <div className="sr-hint" style={{ marginTop: '6px' }}>
               参数引用格式：<code>{`<%参数名%>`}</code>　　返回 <code>1</code>/
@@ -332,8 +354,23 @@ function ConditionBuilder({ config, onChange, onOpenParamPicker }: ConditionBuil
           </div>
           <div className="field">
             <label>脚本内容<span className="req">*</span></label>
+            <div style={{ marginBottom: 6 }}>
+              <button
+                type="button"
+                className="psb"
+                onClick={() =>
+                  onOpenParamPicker('', (paramRef) =>
+                    insertParamAtCursor(paramRef)
+                  )
+                }
+                style={{ fontSize: 11, height: 26, width: 'auto', padding: '0 8px' }}
+              >
+                ＋ 添加参数
+              </button>
+            </div>
             <textarea
-              placeholder={`示例：\nreturn 1 if <%参数名%> > 12 else 0`}
+              ref={scriptRef}
+              placeholder={`示例：\nreturn 1 if <%对象名/参数名%> > 12 else 0`}
               value={config.script || ''}
               onChange={(e) => onChange({ ...config, script: e.target.value })}
               style={{
@@ -795,6 +832,24 @@ interface ModifyBuilderProps {
 }
 
 function ModifyBuilder({ config, onChange, onOpenParamPicker }: ModifyBuilderProps) {
+  const valueRef = useRef<HTMLInputElement>(null);
+
+  function insertParamAtValue(paramRef: string) {
+    if (!valueRef.current) return;
+    const inp = valueRef.current;
+    const start = inp.selectionStart || 0;
+    const end = inp.selectionEnd || 0;
+    const before = (config.value || '').slice(0, start);
+    const after = (config.value || '').slice(end);
+    const newVal = before + paramRef + after;
+    onChange({ ...config, value: newVal });
+    requestAnimationFrame(() => {
+      const pos = start + paramRef.length;
+      inp.setSelectionRange(pos, pos);
+      inp.focus();
+    });
+  }
+
   return (
     <div>
       <div className="field">
@@ -819,12 +874,28 @@ function ModifyBuilder({ config, onChange, onOpenParamPicker }: ModifyBuilderPro
       </div>
       <div className="field">
         <label>目标值<span className="req">*</span></label>
-        <input
-          type="text"
-          placeholder="固定值或表达式"
-          value={config.value || ''}
-          onChange={(e) => onChange({ ...config, value: e.target.value })}
-        />
+        <div className="row2">
+          <input
+            ref={valueRef}
+            type="text"
+            placeholder="固定值或表达式"
+            value={config.value || ''}
+            onChange={(e) => onChange({ ...config, value: e.target.value })}
+            style={{ flex: 1 }}
+          />
+          <button
+            type="button"
+            className="psb"
+            onClick={() =>
+              onOpenParamPicker('', (paramRef) =>
+                insertParamAtValue(paramRef)
+              )
+            }
+            style={{ fontSize: 11, height: 32, width: 'auto', padding: '0 8px', whiteSpace: 'nowrap' }}
+          >
+            ＋ 添加参数
+          </button>
+        </div>
         <div className="hint">
           表达式以 = 开头，引用参数：<code>{`<%参数名%>`}</code>，支持 +-*/
         </div>
@@ -850,6 +921,10 @@ function ModifyBuilder({ config, onChange, onOpenParamPicker }: ModifyBuilderPro
             onChange={(e) => onChange({ ...config, limitMax: e.target.value })}
           />
         </div>
+        {config.limitMin !== '' && config.limitMax !== '' && config.limitMin !== undefined && config.limitMax !== undefined &&
+          Number(config.limitMin) >= Number(config.limitMax) && (
+          <div className="ferr">下限不能大于等于上限</div>
+        )}
       </div>
     </div>
   );

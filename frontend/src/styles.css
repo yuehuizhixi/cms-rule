@@ -1157,6 +1157,11 @@ body, html {
   color: var(--muted);
   margin-top: 4px
 }
+.drawer .field .ferr {
+  font-size: 11px;
+  color: var(--red);
+  margin-top: 4px
+}
 
 .drawer .warn {
   background: #fff8e1;
