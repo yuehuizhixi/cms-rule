@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const client = axios.create({ baseURL: 'http://localhost:8080/api/rule-engine' });
+const API_HOST = window.location.hostname;
+const client = axios.create({ baseURL: `http://${API_HOST}:8080/api/rule-engine` });
 
 export interface ApiResponse<T> {
   code: number;
@@ -129,7 +130,7 @@ export async function getParameterLastValues(): Promise<ApiResponse<any[]>> {
 
 // ========== 参数选择代理接口 (proxy to real microservices) ==========
 
-const proxyClient = axios.create({ baseURL: 'http://localhost:8080/api/rule-engine/proxy' });
+const proxyClient = axios.create({ baseURL: `http://${API_HOST}:8080/api/rule-engine/proxy` });
 
 // 能源类型
 // POST /api/cms-cloud-service/energyInfo/queryCache

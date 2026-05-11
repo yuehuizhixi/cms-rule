@@ -174,7 +174,7 @@ export default function RuleCanvas({
     };
     // Run after DOM update
     requestAnimationFrame(() => requestAnimationFrame(syncHeights));
-  }, [flow, isDirty]);
+  }, [flow, isDirty, nodeStatuses, branchStatuses]);
 
   // Handle scroll to node request
   useEffect(() => {

@@ -2,7 +2,7 @@
  * ParamPicker — 参数选择器
  *
  * Tab 1「参数列表」— 模型/对象/参数三字段搜索 + 分页表格
- * Tab 2「结构树」  — 模型/类型/视角筛选 → 位置树 → 绑定参数
+ * Tab 2「结构树」  — 模型选择 → 类型+视角 → 位置树 → 绑定参数
  *
  * 数据：10.74.170.221 真实微服务
  * 选中：<%对象名称/参数名称%>
@@ -11,6 +11,7 @@ import React, { useState, useEffect, useRef } from 'react';
 
 // ── Types ──
 interface ParamRow {
+  id: string;
   key: string;
   deviceMark: string;
   deviceName: string;
@@ -18,24 +19,26 @@ interface ParamRow {
   modelName: string;
   paramMark: string;
   paramName: string;
+  method?: string;
 }
 interface LocNode {
   id: string; locationName: string; parentId: string; topParentId: string;
   children?: LocNode[]; [k: string]: any;
 }
 interface EnergyType { energyCode: string; energyName: string }
+interface DictItem { dictionaryVal: string; dictionaryName: string }
 export interface SelectedParam {
   ref: string; deviceName: string; deviceMark: string; paramName: string; paramMark: string;
 }
 export interface ParamPickerProps {
   open: boolean;
-  currentParam: string | undefined;   // 回显值 "<%xxx/yyy%>"
+  currentParam: string | undefined;
   onSelect: (p: SelectedParam) => void;
   onClose: () => void;
 }
 
 // ── 认证 ──
-const AUTH = localStorage.getItem('cms_rule_auth_token') || 'Bearer ccb8ce22-250f-46af-9703-d4470375610c';
+const AUTH = localStorage.getItem('cms_rule_auth_token') || 'Bearer 5eab1cca-b94a-465e-bb81-75d0b2840327';
 const BASE = '/api/rule-engine/proxy';
 
 async function post(path: string, body: any, ms = 15000): Promise<any> {
@@ -53,16 +56,38 @@ function exData(r: any): any {
 }
 function ref(item: { deviceName?: string; paramName: string }) { return `<%${item.deviceName || ''}/${item.paramName}%>`; }
 
-// ── 硬编码模型类型 ──
+// ── 模型类型（固定值，与 front 项目一致） ──
 const MODEL_TYPES = [
-  { label: '能流模型', value: 'energy' },
-  { label: '排放模型', value: 'carbon_base' },
-  { label: '对象树',   value: 'object' },
+  { label: '能流模型', value: 'mode' },
+  { label: '排放模型', value: 'emission' },
+  { label: '对象树',   value: 'uc' },
 ];
-const PERSPECTIVES = [
-  { label: '默认', value: 'default' },
-  { label: '精简', value: 'simple' },
-];
+
+function getEnergyTypesByModel(mode: string): EnergyType[] {
+  if (mode === 'mode') return [
+    { energyCode: 'elc', energyName: '电' },
+    { energyCode: 'water', energyName: '水' },
+    { energyCode: 'gas', energyName: '气' },
+    { energyCode: 'heat', energyName: '热' },
+    { energyCode: 'coal', energyName: '煤' },
+    { energyCode: 'oil', energyName: '油' },
+    { energyCode: 'renewable', energyName: '可再生能源' },
+    { energyCode: 'other', energyName: '其他' },
+  ];
+  if (mode === 'emission') return [
+    { energyCode: 'carbon_scope1', energyName: '直接排放（范围一）' },
+    { energyCode: 'carbon_scope2', energyName: '间接排放（范围二）' },
+  ];
+  return [];
+}
+
+// ── 排放模型：从响应 emissionCode/emissionName 映射 ──
+function mapEmissionTypes(data: any[]): EnergyType[] {
+  return data.map((item: any) => ({
+    energyCode: item.emissionCode || item.energyCode,
+    energyName: item.emissionName || item.energyName,
+  }));
+}
 
 // ── Component ──
 export default function ParamPicker({ open, currentParam, onSelect, onClose }: ParamPickerProps) {
@@ -73,14 +98,10 @@ export default function ParamPicker({ open, currentParam, onSelect, onClose }: P
   const [selRef, setSelRef] = useState('');
   const [selInfo, setSelInfo] = useState<Omit<SelectedParam, 'ref'> | null>(null);
 
-  // 能源类型（仅结构树用）
-  const [energyTypes, setEnergyTypes] = useState<EnergyType[]>([]);
-  const [treeEnergy, setTreeEnergy] = useState('');
-
   // ── 参数列表 ──
-  const [lm, setLm] = useState(''); // 模型
-  const [ld, setLd] = useState(''); // 对象(设备)
-  const [lp, setLp] = useState(''); // 参数
+  const [lm, setLm] = useState('');
+  const [ld, setLd] = useState('');
+  const [lp, setLp] = useState('');
   const [list, setList] = useState<ParamRow[]>([]);
   const [ltotal, setLtotal] = useState(0);
   const [lpage, setLpage] = useState(1);
@@ -88,16 +109,24 @@ export default function ParamPicker({ open, currentParam, onSelect, onClose }: P
   const L = 15;
 
   // ── 结构树 ──
-  const [treeModel, setTreeModel] = useState('energy');     // bindType
-  const [treeType, setTreeType] = useState('carbon_base');   // type
-  const [treePersp, setTreePersp] = useState('default');     // perspective
+  const [treeModel, setTreeModel] = useState('mode');       // mode / emission / uc
+  const [treeEnergy, setTreeEnergy] = useState('');          // energyCode
+  const [treePersp, setTreePersp] = useState('');            // perspective
+  const [treeTypeEnergies, setTreeTypeEnergies] = useState<EnergyType[]>([]);
+  const [perspectives, setPerspectives] = useState<DictItem[]>([]);
+  // 记录视角是否已加载（参照 front：mounted 加载一次）
+  const perspectivesLoadedRef = useRef(false);
   const [tRoots, setTRoots] = useState<LocNode[]>([]);
   const [tload, setTload] = useState(false);
   const [expK, setExpK] = useState<Set<string>>(new Set());
   const [tSelId, setTSelId] = useState<string | null>(null);
+  const [tSelTopParentId, setTSelTopParentId] = useState<string>('');
   const [tPath, setTPath] = useState<LocNode[]>([]);
   const [tp, setTp] = useState<ParamRow[]>([]);
   const [tpload, setTpload] = useState(false);
+  const [tpPage, setTpPage] = useState(1);
+  const [tpTotal, setTpTotal] = useState(0);
+  const tpL = 15;
   // 树节点下的搜索
   const [tm, setTm] = useState('');
   const [td, setTd] = useState('');
@@ -110,63 +139,187 @@ export default function ParamPicker({ open, currentParam, onSelect, onClose }: P
     echoRef.current = e;
     setSelRef(e);
     setSelInfo(null);
-    // 尝试解析回显
     const m = e.match(/^<%(.*?)\/(.*?)%>$/);
     if (m) setSelInfo({ deviceName: m[1], deviceMark: '', paramName: m[2], paramMark: '' });
 
     setTab('list');
     setLpage(1); setLm(''); setLd(''); setLp('');
-    setTreeEnergy(''); setTRoots([]); setTSelId(null); setTPath([]); setTp([]);
+    setTreeModel('mode'); setTreeEnergy(''); setTreePersp('');
+    setTRoots([]); setTSelId(null); setTp([]); setTPath([]);
+    setTreeTypeEnergies([]);
     setTm(''); setTd(''); setTparam('');
-    loadEnergy();
+    // 如果视角还没加载过，加载一次
+    if (!perspectivesLoadedRef.current) loadPerspectives();
     loadList();
   }, [open]);
 
-  async function loadEnergy() {
-    try { const d = exData(await post('/energyInfo/queryCache', {})); if (Array.isArray(d)) setEnergyTypes(d); } catch {}
+  // ── 加载视角（参照 front: mounted 时只加载一次） ──
+  async function loadPerspectives() {
+    try {
+      const r = await post('/dictionary/queryCacheQuery', { configCode: 'perspective', type: 'perspective', limit: 1000, pageNo: 1 });
+      const d = exData(r);
+      if (Array.isArray(d)) {
+        setPerspectives(d);
+        perspectivesLoadedRef.current = true;
+        // 设置默认视角
+        if (d.length > 0) setTreePersp(d[0].dictionaryVal);
+      }
+    } catch {}
   }
 
-  // ── 参数列表加载 ──
-  async function loadList() {
-    setLload(true);
-    try {
-      const body: Record<string, any> = { pageNo: lpage, limit: L, offset: (lpage - 1) * L }; if (lm) body.model = lm; if (ld) body.device = ld; if (lp) body.param = lp;
-      const d = exData(await post('/jnyz/dataset/queryParams', body)) || { content: [], totalElements: 0 };
-      setList((d.content || []).map((x: any, i: number): ParamRow => ({ key: `${x.deviceMark}-${x.modelMark}-${x.paramMark}-${i}`, deviceMark: x.deviceMark || '', deviceName: x.deviceName || '', modelMark: x.modelMark || '', modelName: x.modelName || '', paramMark: x.paramMark || '', paramName: x.paramName || '' })));
-      setLtotal(parseInt(d.totalElements || d.total || '0', 10));
-    } catch { setList([]); setLtotal(0); } finally { setLload(false); }
-  }
-  useEffect(() => { if (open && tab === 'list') loadList(); }, [lpage]);
+  // ── 模型切换 ──
+  useEffect(() => {
+    if (!open || tab !== 'tree') return;
+    // 先清空树
+    setTRoots([]); setTSelId(null); setTp([]); setTPath([]); setExpK(new Set());
 
-  // ── 结构树加载 ──
-  async function loadTree() {
-    setTload(true);
+    if (treeModel === 'mode') {
+      // 参照：getEnergyList() → 请求能流模型能源类型
+      setTreeEnergy('elc');
+      (async () => {
+        try {
+          const r = await post('/energyInfo/queryCache', { type: 'ALL' });
+          const d = exData(r);
+          if (Array.isArray(d)) { setTreeTypeEnergies(d); }
+        } catch {}
+      })();
+    } else if (treeModel === 'emission') {
+      // 参照：getEmissionList() → 请求排放模型能源类型
+      setTreeEnergy('');
+      (async () => {
+        try {
+          const r = await post('/emissionInfo/queryCacheAll', { pageNo: 1, limit: 100 });
+          const d = exData(r);
+          if (Array.isArray(d)) { setTreeTypeEnergies(mapEmissionTypes(d)); }
+        } catch {}
+      })();
+    } else if (treeModel === 'uc') {
+      setTreeEnergy('');
+      setTreePersp('');
+      // 参照：getTreeList()，type 传 device 而非 uc
+      loadUCTree();
+      return;
+    }
+  }, [treeModel]);
+
+  // ── 类型或视角变化时自动加载树（参照：选择后自动 getTreeData） ──
+  useEffect(() => {
+    if (!open || tab !== 'tree' || treeModel === 'uc') return;
+    if (!treeEnergy || !treePersp) return;
+    loadTree();
+  }, [treeEnergy, treePersp]);
+
+  // ── UC 专用：树加载（无类型+视角） ──
+  async function loadUCTree() {
+    setTload(true); setTRoots([]);
     try {
-      const body: Record<string, any> = { type: treeType, bindType: treeModel, energyCode: treeEnergy || 'common' };
+      const body = { bindType: 'device', energyCode: 'common', type: 'device' };
       const d = exData(await post('/locationTree/query', body));
       const roots: LocNode[] = Array.isArray(d) ? d : [];
       setTRoots(roots);
-      if (roots.length > 0) { setTSelId(roots[0].id); setTPath([roots[0]]); setExpK(new Set([roots[0].id])); loadTreeParams(roots[0].id); }
+      if (roots.length > 0) {
+        setTSelId(roots[0].id);
+        setTSelTopParentId(roots[0].topParentId || '');
+        setTPath([roots[0]]);
+        setExpK(new Set([roots[0].id]));
+        loadTreeParamsUC(roots[0].id, roots[0].topParentId || '');
+      }
     } catch { setTRoots([]); } finally { setTload(false); }
   }
-  useEffect(() => { if (open && tab === 'tree') loadTree(); }, [tab, treeModel, treeType, treeEnergy]);
 
-  // ── 树「right-side」参数加载 ──
-  async function loadTreeParams(locId: string) {
+  // ── 普通树加载（mode/emission）─
+  async function loadTree() {
+    if (treeModel === 'uc') return;
+    if (!treeEnergy || !treePersp) return;
+    setTload(true); setTRoots([]);
+    // 参照：getTreeQuery({ energyCode, perspective, type: treeModel, bindType: treeModel })
+    try {
+      const body = { energyCode: treeEnergy, perspective: treePersp, type: treeModel, bindType: treeModel };
+      const d = exData(await post('/locationTree/query', body));
+      const roots: LocNode[] = Array.isArray(d) ? d : [];
+      setTRoots(roots);
+      if (roots.length > 0) {
+        setTSelId(roots[0].id);
+        setTSelTopParentId(roots[0].topParentId || '');
+        setTPath([roots[0]]);
+        setExpK(new Set([roots[0].id]));
+        loadTreeParamsNormal(roots[0].id);
+      }
+    } catch { setTRoots([]); } finally { setTload(false); }
+  }
+
+  // ── 树参数加载：普通模式（mode/emission） ──
+  async function loadTreeParamsNormal(locId: string, pg?: number) {
+    const page = pg ?? tpPage;
     setTpload(true); setTp([]);
     try {
-      const body: Record<string, any> = { relationType: 'iot', locationId: locId, energyCode: treeEnergy || 'common', perspective: treePersp, pageNo: 1, limit: 200, includeChildren: 'N', includeEmptyNode: 'Y' };
-      if (tm) body.model = tm; if (td) body.device = td; if (tparam) body.param = tparam;
+      const locationId = treePersp !== 'default' ? treePersp + '-' + locId : locId;
+      const body: Record<string, any> = {
+        ...(tm ? { model: tm } : {}),
+        ...(td ? { device: td } : {}),
+        ...(tparam ? { param: tparam } : {}),
+        pageNo: page, limit: tpL,
+        globalSearch: 'N', includeChildren: 'N',
+        locationId,
+        energyCode: treeEnergy,
+        perspective: treePersp,
+        relationType: treeModel,
+      };
       const d = exData(await post('/projectModel/queryBindRelationAll', body)) || { content: [] };
-      setTp((d.content || []).filter((x: any) => x.paramName && x.deviceName).map((x: any, i: number): ParamRow => ({ key: `${x.deviceMark}-${x.paramMark}-${i}`, deviceMark: x.deviceMark || '', deviceName: x.deviceName || '', modelMark: x.modelMark || '', modelName: x.modelName || '', paramMark: x.paramMark || '', paramName: x.paramName || '' })));
-    } catch { setTp([]); } finally { setTpload(false); }
+      setTpPage(page);
+      setTpTotal(parseInt(d.totalElements || d.total || '0', 10));
+      const rows = (d.content || []).filter((x: any) => x.paramName && x.deviceName).map((x: any, i: number): ParamRow => ({
+        id: (x.deviceMark || '') + '' + (x.modelMark || '') + '' + (x.paramMark || ''),
+        key: `${x.deviceMark}-${x.paramMark}-${i}`,
+        deviceMark: x.deviceMark || '', deviceName: x.deviceName || '',
+        modelMark: x.modelMark || '', modelName: x.modelName || '',
+        paramMark: x.paramMark || '', paramName: x.paramName || '',
+        method: x.method || 'avg',
+      }));
+      setTp(rows);
+    } catch { setTp([]); setTpTotal(0); } finally { setTpload(false); }
+  }
+
+  // ── 树参数加载：UC 模式 ──
+  async function loadTreeParamsUC(locId: string, topParentId: string, pg?: number) {
+    const page = pg ?? tpPage;
+    setTpload(true); setTp([]);
+    try {
+      const body: Record<string, any> = {
+        ...(tm ? { model: tm } : {}),
+        ...(td ? { device: td } : {}),
+        ...(tparam ? { param: tparam } : {}),
+        pageNo: page, limit: tpL,
+        includeChildren: 'N', globalSearch: 'N',
+        topParentId,
+        locationId: locId,
+      };
+      const d = exData(await post('/dataSimulation/list', body)) || { content: [] };
+      setTpPage(page);
+      setTpTotal(parseInt(d.totalElements || d.total || '0', 10));
+      const rows = (d.content || []).filter((x: any) => x.paramName && x.deviceName).map((x: any, i: number): ParamRow => ({
+        id: (x.deviceMark || '') + '' + (x.modelMark || '') + '' + (x.paramMark || ''),
+        key: `${x.deviceMark}-${x.paramMark}-${i}`,
+        deviceMark: x.deviceMark || '', deviceName: x.deviceName || '',
+        modelMark: x.modelMark || '', modelName: x.modelName || '',
+        paramMark: x.paramMark || '', paramName: x.paramName || '',
+        method: x.method || 'avg',
+      }));
+      setTp(rows);
+    } catch { setTp([]); setTpTotal(0); } finally { setTpload(false); }
   }
 
   function clickNode(node: LocNode) {
     setTSelId(node.id);
+    setTSelTopParentId(node.topParentId || '');
     setTPath(prev => { const i = prev.findIndex(p => p.id === node.id); return i >= 0 ? prev.slice(0, i + 1) : [...prev, node]; });
     setExpK(prev => { const n = new Set(prev); n.has(node.id) ? n.delete(node.id) : n.add(node.id); return n; });
-    loadTreeParams(node.id);
+    setTpPage(1);
+    if (treeModel === 'uc') {
+      loadTreeParamsUC(node.id, node.topParentId || '', 1);
+    } else {
+      loadTreeParamsNormal(node.id, 1);
+    }
   }
 
   function handleSel(item: { deviceName: string; deviceMark?: string; paramName: string; paramMark?: string }) {
@@ -176,11 +329,41 @@ export default function ParamPicker({ open, currentParam, onSelect, onClose }: P
 
   function confirm() { if (selInfo) onSelect({ ref: selRef, ...selInfo }); onClose(); }
 
-  function listSearch() { setLpage(1); }
-  function treeSearch() { if (tSelId) loadTreeParams(tSelId); }
+  function listSearch() { setLpage(1); loadList(); }
+
+  function treeSearch() {
+    setTpPage(1);
+    if (tSelId) {
+      if (treeModel === 'uc') loadTreeParamsUC(tSelId, tSelTopParentId, 1);
+      else loadTreeParamsNormal(tSelId, 1);
+    }
+  }
+
+  // ── 参数列表加载 ──
+  async function loadList() {
+    setLload(true);
+    try {
+      const body: Record<string, any> = { pageNo: lpage, limit: L };
+      if (lm) body.model = lm; if (ld) body.device = ld; if (lp) body.param = lp;
+      const d = exData(await post('/jnyz/dataset/queryParams', body)) || { content: [], totalElements: 0 };
+      setList((d.content || []).map((x: any, i: number): ParamRow => ({
+        id: (x.deviceMark || '') + '' + (x.modelMark || '') + '' + (x.paramMark || ''),
+        key: `${x.deviceMark}-${x.modelMark}-${x.paramMark}-${i}`,
+        deviceMark: x.deviceMark || '', deviceName: x.deviceName || '',
+        modelMark: x.modelMark || '', modelName: x.modelName || '',
+        paramMark: x.paramMark || '', paramName: x.paramName || '',
+        method: x.method || 'avg',
+      })));
+      setLtotal(parseInt(d.totalElements || d.total || '0', 10));
+    } catch { setList([]); setLtotal(0); } finally { setLload(false); }
+  }
+  useEffect(() => { if (open && tab === 'list') loadList(); }, [lpage]);
+
+
 
   const bp = tPath.map(n => n.locationName);
-  const tpTotal = Math.ceil(ltotal / L);
+  const tpTotalPages = Math.ceil(tpTotal / tpL);
+  const tlTotal = ltotal;
 
   if (!open) return null;
 
@@ -219,10 +402,10 @@ export default function ParamPicker({ open, currentParam, onSelect, onClose }: P
               </tbody></table>
             </div>
             <div className="prm-pagination">
-              <span>共 {ltotal} 条</span>
+              <span>共 {tlTotal} 条</span>
               <button disabled={lpage <= 1} onClick={() => setLpage(p => p - 1)}>‹</button>
-              <span className="prm-page-info">第 {ltotal > 0 ? lpage : 0}/{tpTotal || 1} 页</span>
-              <button disabled={lpage >= tpTotal} onClick={() => setLpage(p => p + 1)}>›</button>
+              <span className="prm-page-info">第 {tlTotal > 0 ? lpage : 0}/{Math.ceil(tlTotal / L) || 1} 页</span>
+              <button disabled={lpage >= Math.ceil(tlTotal / L)} onClick={() => setLpage(p => p + 1)}>›</button>
               <span className="prm-page-info">{L} 条/页</span>
             </div>
           </div>
@@ -238,22 +421,24 @@ export default function ParamPicker({ open, currentParam, onSelect, onClose }: P
                   {MODEL_TYPES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
                 </select>
               </div>
-              <div className="prm-tf-item"><label>类型</label>
-                <select value={treeType} onChange={e => setTreeType(e.target.value)}>
-                  {MODEL_TYPES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-                </select>
-              </div>
-              <div className="prm-tf-item"><label>视角</label>
-                <select value={treePersp} onChange={e => setTreePersp(e.target.value)}>
-                  {PERSPECTIVES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-                </select>
-              </div>
-              <div className="prm-tf-item"><label>能源类型</label>
-                <select value={treeEnergy} onChange={e => setTreeEnergy(e.target.value)}>
-                  <option value="">全部</option>
-                  {energyTypes.map(et => <option key={et.energyCode} value={et.energyCode}>{et.energyName}</option>)}
-                </select>
-              </div>
+              {treeModel !== 'uc' && (
+                <>
+                  <div className="prm-tf-item"><label>类型</label>
+                    <select value={treeEnergy} onChange={e => setTreeEnergy(e.target.value)}>
+                      {(treeTypeEnergies.length > 0 ? treeTypeEnergies : getEnergyTypesByModel(treeModel)).map(et =>
+                        <option key={et.energyCode} value={et.energyCode}>{et.energyName}</option>
+                      )}
+                    </select>
+                  </div>
+                  <div className="prm-tf-item"><label>视角</label>
+                    <select value={treePersp} onChange={e => setTreePersp(e.target.value)}>
+                      {perspectives.map(p =>
+                        <option key={p.dictionaryVal} value={p.dictionaryVal}>{p.dictionaryName}</option>
+                      )}
+                    </select>
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="prm-tree-hsplit">
@@ -261,7 +446,7 @@ export default function ParamPicker({ open, currentParam, onSelect, onClose }: P
               <div className="prm-tree-left">
                 <div className="prm-tree-breadcrumb">
                   <span className="prm-bc-link" onClick={() => { setTSelId(null); setTPath([]); setTp([]); }}>全部</span>
-                  {bp.map((n, i) => <React.Fragment key={i}><span className="prm-bc-sep">/</span><span className="prm-bc-link" onClick={() => { const tgt = tPath[i]; setTPath(tPath.slice(0, i + 1)); setTSelId(tgt.id); loadTreeParams(tgt.id); }}>{n}</span></React.Fragment>)}
+                  {bp.map((n, i) => <React.Fragment key={i}><span className="prm-bc-sep">/</span><span className="prm-bc-link" onClick={() => { const tgt = tPath[i]; setTPath(tPath.slice(0, i + 1)); setTSelId(tgt.id); setTSelTopParentId(tgt.topParentId || ''); setTpPage(1); if (treeModel === 'uc') loadTreeParamsUC(tgt.id, tgt.topParentId || '', 1); else loadTreeParamsNormal(tgt.id, 1); }}>{n}</span></React.Fragment>)}
                 </div>
                 <div className="prm-tree-scroll">
                   {tload ? <div className="prm-empty">加载中…</div> :
@@ -290,6 +475,20 @@ export default function ParamPicker({ open, currentParam, onSelect, onClose }: P
                          <td>{it.deviceName}</td><td>{it.modelName}</td><td>{it.paramName}</td><td className="prm-mono">{it.paramMark}</td>
                        </tr>)})}
                    </tbody></table>}
+                  {/* 分页 */}
+                  <div className="prm-pagination" style={{ marginTop: 8 }}>
+                    <span>共 {tpTotal} 条</span>
+                    <button disabled={tpPage <= 1} onClick={() => {
+                      const p = tpPage - 1;
+                      if (tSelId) { setTpPage(p); if (treeModel === 'uc') loadTreeParamsUC(tSelId, tSelTopParentId, p); else loadTreeParamsNormal(tSelId, p); }
+                    }}>‹</button>
+                    <span className="prm-page-info">第 {tpTotal > 0 ? tpPage : 0}/{tpTotalPages || 1} 页</span>
+                    <button disabled={tpPage >= tpTotalPages} onClick={() => {
+                      const p = tpPage + 1;
+                      if (tSelId) { setTpPage(p); if (treeModel === 'uc') loadTreeParamsUC(tSelId, tSelTopParentId, p); else loadTreeParamsNormal(tSelId, p); }
+                    }}>›</button>
+                    <span className="prm-page-info">{tpL} 条/页</span>
+                  </div>
                 </div>
               </div>
             </div>

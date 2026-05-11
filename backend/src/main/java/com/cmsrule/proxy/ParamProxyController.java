@@ -20,6 +20,7 @@ public class ParamProxyController {
     private static final String REMOTE_HOST = "http://10.74.170.221";
     private static final String CMS_API  = REMOTE_HOST + "/api/cms-cloud-service";
     private static final String HVAC_API = REMOTE_HOST + "/api/hvac_iot";
+    private static final String BUSINESS_API = REMOTE_HOST + "/api/business";
 
     private final WebClient webClient;
 
@@ -67,7 +68,17 @@ public class ParamProxyController {
                 .bodyToMono(Object.class);
     }
 
-    // ── 4. 字典查询（模型类型等） ──
+    // ── 4. 字典查询（模型类型、视角等） ──
+    @PostMapping("/dictionary/queryCacheQuery")
+    public Mono<Object> queryDictionaryCache(
+            @RequestBody Map<String, Object> body,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
+        return buildPost(CMS_API + "/dictionary/queryCacheQuery", auth)
+                .bodyValue(body)
+                .retrieve()
+                .bodyToMono(Object.class);
+    }
+
     @PostMapping("/dictionary/queryNoCacheQuery")
     public Mono<Object> queryDictionaryNoCache(
             @RequestBody Map<String, Object> body,
@@ -85,6 +96,28 @@ public class ParamProxyController {
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
         return buildPost(CMS_API + "/projectModel/queryBindRelationAll", auth)
                 .bodyValue(body)
+                .retrieve()
+                .bodyToMono(Object.class);
+    }
+
+    // ── 6. 数据模拟列表（UC/对象树模式用） —— 参考 businessApi，非 baseApi ──
+    @PostMapping("/dataSimulation/list")
+    public Mono<Object> queryDataSimulationList(
+            @RequestBody Map<String, Object> body,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
+        return buildPost(BUSINESS_API + "/dataSimulation/list", auth)
+                .bodyValue(body)
+                .retrieve()
+                .bodyToMono(Object.class);
+    }
+
+    // ── 7. 排放模型能源类型 ──
+    @PostMapping("/emissionInfo/queryCacheAll")
+    public Mono<Object> queryEmissionCacheAll(
+            @RequestBody(required = false) Map<String, Object> body,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
+        return buildPost(CMS_API + "/emissionInfo/queryCacheAll", auth)
+                .bodyValue(body == null ? Map.of() : body)
                 .retrieve()
                 .bodyToMono(Object.class);
     }
