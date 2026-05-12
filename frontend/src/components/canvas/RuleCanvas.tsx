@@ -103,6 +103,7 @@ export interface RuleCanvasProps {
   onOffsetChange: (offset: { x: number; y: number }) => void;
   onNodeNameChange?: (nodeId: string, newName: string) => void;
   onRenameBranch?: (nodeId: string, branchId: string, newName: string) => void;
+  onRouteLineOffsetChange?: (nodeId: string, newOffset: number) => void;
 }
 
 // ============ Main Component ============
@@ -123,6 +124,7 @@ export default function RuleCanvas({
   onOffsetChange,
   onNodeNameChange,
   onRenameBranch,
+  onRouteLineOffsetChange,
 }: RuleCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -176,7 +178,7 @@ export default function RuleCanvas({
     requestAnimationFrame(() => requestAnimationFrame(syncHeights));
   }, [flow, isDirty, nodeStatuses, branchStatuses]);
 
-  // ── 路由跳转线渲染（对齐原型 mt() 函数） ──
+  // ── 路由跳转线渲染（带拖拽手柄） ──
   useEffect(() => {
     if (!canvasRef.current) return;
     const canvasEl = canvasRef.current;
@@ -190,7 +192,7 @@ export default function RuleCanvas({
     );
     if (routes.length === 0) return;
 
-    // 工具函数：获取 node 在 canvas 内部的坐标（对齐原型 ut()）
+    // 工具函数：获取 node 在 canvas 内部的坐标
     function getNodeCanvasPos(id: string) {
       const el = canvasEl.querySelector(`[data-node-id="${id}"]`);
       if (!el) return null;
@@ -206,7 +208,7 @@ export default function RuleCanvas({
 
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('class', 'rto');
-    svg.style.cssText = 'position:absolute;top:0;left:0;width:1px;height:1px;overflow:visible;pointer-events:none;z-index:5';
+    svg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;overflow:visible;z-index:5;pointer-events:none';
 
     // 箭头标记
     const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
@@ -223,16 +225,19 @@ export default function RuleCanvas({
       const x2 = tgt.left + tgt.width;
       const y2 = tgt.top + tgt.height / 2;
 
-      const gap = routeNode.config?.routeOffset || 70;
-      const midX = Math.max(x1, x2) + gap;
+      // 使用 lineOffset（默认 70）
+      const lineOffset = routeNode.config?.lineOffset ?? 70;
+      const midX = Math.max(x1, x2) + lineOffset;
 
       const d = `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2 + 4} ${y2}`;
 
+      // 虚线路径
       const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       path.setAttribute('d', d);
       path.setAttribute('fill', 'none');
       path.setAttribute('stroke', '#3b6ef5');
       path.setAttribute('stroke-width', '2');
+      path.setAttribute('stroke-dasharray', '6,4');
       path.setAttribute('marker-end', 'url(#arr-route)');
       svg.appendChild(path);
 
@@ -244,10 +249,86 @@ export default function RuleCanvas({
       text.setAttribute('font-size', '11');
       text.textContent = '跳转至：' + (flow.nodes[routeNode.config.targetId]?.name || '?');
       svg.appendChild(text);
+
+      // ── 拖拽手柄（在弯折点） ──
+      const handleGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      // 编辑模式下可交互，预览模式下只显示静态圆点
+      const interactive = isDirty;
+      handleGroup.style.pointerEvents = interactive ? 'auto' : 'none';
+
+      const handle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      handle.setAttribute('cx', String(midX));
+      handle.setAttribute('cy', String(y1));
+      handle.setAttribute('r', interactive ? '7' : '4');
+      handle.setAttribute('fill', interactive ? '#fff' : '#3b6ef5');
+      if (interactive) {
+        handle.setAttribute('stroke', '#3b6ef5');
+        handle.setAttribute('stroke-width', '2');
+        handle.setAttribute('cursor', 'ew-resize');
+      }
+      handleGroup.appendChild(handle);
+
+      // 添加 hover 提示
+      if (interactive) {
+        const tip = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+        tip.textContent = '拖拽调整水平偏移';
+        handle.appendChild(tip);
+      }
+
+      // 拖拽逻辑
+      if (interactive) {
+        let isDragging = false;
+        let startX = 0;
+        let startOff = 0;
+
+        const onMouseDown = (e: MouseEvent) => {
+          e.preventDefault();
+          e.stopPropagation();
+          isDragging = true;
+          startX = e.clientX;
+          startOff = lineOffset;
+          handle.setAttribute('r', '9');
+          document.addEventListener('mousemove', onMouseMove);
+          document.addEventListener('mouseup', onMouseUp);
+        };
+
+        const onMouseMove = (e: MouseEvent) => {
+          if (!isDragging) return;
+          // 拖拽偏移需要考虑画布缩放
+          const dx = (e.clientX - startX) / scale;
+          const newOffset = Math.max(-2000, Math.min(2000, startOff + dx));
+          // 实时更新手柄位置
+          const newMidX = Math.max(x1, x2) + newOffset;
+          handle.setAttribute('cx', String(newMidX));
+          // 也更新路径（实时预览）
+          const newD = `M ${x1} ${y1} L ${newMidX} ${y1} L ${newMidX} ${y2} L ${x2 + 4} ${y2}`;
+          path.setAttribute('d', newD);
+          // 更新文本位置
+          text.setAttribute('x', String(newMidX + 10));
+        };
+
+        const onMouseUp = () => {
+          if (!isDragging) return;
+          isDragging = false;
+          document.removeEventListener('mousemove', onMouseMove);
+          document.removeEventListener('mouseup', onMouseUp);
+          handle.setAttribute('r', '7');
+          // 计算最终偏移并回调
+          const currentCx = parseFloat(handle.getAttribute('cx') || String(midX));
+          const finalOffset = currentCx - Math.max(x1, x2);
+          if (finalOffset !== lineOffset) {
+            onRouteLineOffsetChange?.(routeNode.id, Math.round(finalOffset));
+          }
+        };
+
+        handle.addEventListener('mousedown', onMouseDown);
+      }
+
+      svg.appendChild(handleGroup);
     });
 
     canvasEl.appendChild(svg);
-  }, [flow, scale, offset]);
+  }, [flow, scale, offset, isDirty]);
 
   // Handle scroll to node request
   useEffect(() => {

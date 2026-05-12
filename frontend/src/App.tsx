@@ -234,7 +234,7 @@ export default function App() {
   function secondsToPoll(s: number): PollInterval {
     const d = Math.floor(s / 86400); s %= 86400;
     const h = Math.floor(s / 3600); s %= 3600;
-    const m = Math.floor(s / 60);
+    const m = Math.floor(s / 60); s %= 60;
     return { d, h, m, s };
   }
   function pollToSecondsInput(p: PollInterval): number {
@@ -263,15 +263,21 @@ export default function App() {
     setPreviewMode(false);
     stopPreview();
     setCanvasFlow(createEmptyFlow());
+    // 重置全选状态
+    const checkAll = document.getElementById('check-all') as HTMLInputElement | null;
+    if (checkAll) checkAll.checked = false;
+    document.querySelectorAll<HTMLInputElement>('.ric').forEach(el => { el.checked = false; });
   }
 
   async function addTab() {
     const name = "分组" + (groups.length + 1);
     try {
-      await api.createGroup(name);
-      const newGroup: Group = { id: uid("tab"), name, rules: [] };
+      const resp = await api.createGroup(name);
+      const realId = resp.data?.id;
+      if (!realId) { showToast("创建分组失败：未获取到ID"); return; }
+      const newGroup: Group = { id: realId, name, rules: [] };
       setGroups(prev => [...prev, newGroup]);
-      setCurrentTabId(newGroup.id);
+      setCurrentTabId(realId);
       setCurrentRuleId(null);
       setIsDirty(false);
       showToast("已创建分组");
@@ -279,6 +285,7 @@ export default function App() {
   }
 
   async function deleteTab(tabId: string) {
+    if (isDirty && currentRuleId) { showToast("当前规则有未保存的流程修改，请先保存或暂存后再操作"); return; }
     if (groups.length <= 1) { showToast("至少保留一个分组"); return; }
     if (!confirm(`确认删除分组「${groups.find(g => g.id === tabId)?.name}」？`)) return;
     try {
@@ -323,15 +330,36 @@ export default function App() {
   }
 
   function handleSwitchRule(ruleId: string) {
-    if (isDirty && currentRuleId && currentRuleId !== ruleId) {
-      if (!confirm("切换规则将丢失修改，确认？")) return;
+    if (ruleId === currentRuleId) return; // 已经在当前规则，无需重复加载
+    if (isDirty && currentRuleId) {
+      if (!confirm("当前规则有未保存的流程修改，切换将丢失修改，确认？")) return;
     }
     selectRule(ruleId);
   }
 
+  function hasRealFlowNodes(rule: Rule): boolean {
+    if (!rule.flow) return false;
+    const mf = rule.flow.mainFlow;
+    return !!mf && mf.length > 0;
+  }
+
   async function toggleRuleEnabled(rule: Rule, checked: boolean) {
+    // 有未保存的编辑时提示先保存
+    if (isDirty && currentRuleId === rule.id) {
+      showToast("当前规则有未保存的流程修改，请先保存后再切换状态");
+      return;
+    }
     if (checked && rule.drafted) { showToast("请完成规则配置后再开启规则"); return; }
     const isEnable = checked;
+    // 启用时检查当前画布流程是否有实际节点
+    if (isEnable) {
+      const currentFlow = canvasFlow;
+      const hasNodes = currentFlow.mainFlow && currentFlow.mainFlow.length > 0;
+      if (!hasNodes) {
+        showToast("规则流程不完整，不可启用: 主流程为空");
+        return;
+      }
+    }
     const pollStr = pollToDisplay(rule.poll);
     const warning = isEnable
       ? "启用后，该规则将按设定的轮询间隔自动运行，可能对项目数据产生实际影响。"
@@ -343,28 +371,12 @@ export default function App() {
       onConfirm: async () => {
         try {
           await api.updateRuleStatus(rule.id, isEnable ? "ACTIVE" : "INACTIVE");
-          const resp = await api.getGroups();
-          const data = resp.data;
-          const freshGroups: Group[] = (data?.groups || []).map((g: any) => ({
-            id: g.id, name: g.name,
-            rules: (data?.rules || []).filter((r: any) => r.groupId === g.id).map((r: any) => ({
-              id: r.id, name: r.name, description: r.description || "",
-              enabled: r.status === "ACTIVE", drafted: r.status === "DRAFT",
-              poll: secondsToPoll(r.pollInterval),
-              flow: parseFlow(r.flow),
-            }))
-          }));
-          setGroups(freshGroups);
-          if (currentRuleId) {
-            const grp = freshGroups.find(g => g.id === currentTabId);
-            const fresh = grp?.rules.find(r => r.id === currentRuleId);
-            if (fresh) {
-              const flow = fresh.flow || createEmptyFlow();
-              setCanvasFlow(JSON.parse(JSON.stringify(flow)));
-            }
-          }
+          await loadData();
           showToast(isEnable ? "规则已启用" : "规则已停用");
-        } catch { showToast("操作失败"); }
+        } catch (e: any) {
+          const msg = e?.response?.data?.message || e?.response?.data?.msg || "操作失败";
+          showToast(msg);
+        }
       },
       body: (
         <div>
@@ -381,36 +393,13 @@ export default function App() {
         </div>
       ),
     });
-    try {
-      await api.updateRuleStatus(rule.id, checked ? "ACTIVE" : "INACTIVE");
-      // 直接拉取最新数据刷新列表和画布
-      const resp = await api.getGroups();
-      const data = resp.data;
-      const freshGroups: Group[] = (data?.groups || []).map((g: any) => ({
-        id: g.id, name: g.name,
-        rules: (data?.rules || []).filter((r: any) => r.groupId === g.id).map((r: any) => ({
-          id: r.id, name: r.name, description: r.description || "",
-          enabled: r.status === "ACTIVE", drafted: r.status === "DRAFT",
-          poll: secondsToPoll(r.pollInterval),
-          flow: parseFlow(r.flow),
-        }))
-      }));
-      setGroups(freshGroups);
-      if (currentRuleId) {
-        const grp = freshGroups.find(g => g.id === currentTabId);
-        const fresh = grp?.rules.find(r => r.id === currentRuleId);
-        if (fresh) {
-          const flow = fresh.flow || createEmptyFlow();
-          setCanvasFlow(JSON.parse(JSON.stringify(flow)));
-        }
-      }
-      showToast(checked ? "规则已启用" : "规则已停用");
-    } catch { showToast("操作失败"); }
+    // 注意：确认框 onConfirm 中已处理状态变更，此处不再重复调用
   }
 
   async function deleteRule(ruleId: string) {
     const rule = allRules.find(r => r.id === ruleId);
     if (!rule) return;
+    if (isDirty && currentRuleId === ruleId) { showToast("当前规则有未保存的流程修改，请先保存或暂存后再删除"); return; }
     if (rule.enabled) { showToast("规则启用中，停用后可删除"); return; }
     if (!confirm(`确认删除规则「${rule.name}」？此操作不可撤销。`)) return;
     try {
@@ -425,6 +414,7 @@ export default function App() {
     const checked = document.querySelectorAll<HTMLInputElement>(".ric:checked");
     const ids = Array.from(checked).map(el => el.dataset.id!).filter(Boolean);
     if (!ids.length) { showToast("请先勾选"); return; }
+    if (isDirty && currentRuleId && ids.includes(currentRuleId)) { showToast("当前规则有未保存的流程修改，请先保存或暂存后再删除"); return; }
     const enabled = allRules.filter(r => ids.includes(r.id) && r.enabled);
     if (enabled.length) { showToast("启用中不可删除：" + enabled.map(r => r.name).join(",")); return; }
     if (!confirm(`确认批量删除 ${ids.length} 条规则？此操作不可撤销。`)) return;
@@ -1148,6 +1138,21 @@ export default function App() {
   const [ruleFormDesc, setRuleFormDesc] = useState("");
   const [ruleFormPoll, setRuleFormPoll] = useState<PollInterval>({ d: 0, h: 0, m: 0, s: 30 });
 
+  function handlePollChange(field: keyof PollInterval, raw: number) {
+    setRuleFormPoll(prev => {
+      const next = { ...prev, [field]: raw };
+      // 超限自动向大单位进位
+      let total = pollToSeconds(next);
+      // 不超过30天
+      if (total > 2592000) total = 2592000;
+      const d = Math.floor(total / 86400); total %= 86400;
+      const h = Math.floor(total / 3600); total %= 3600;
+      const m = Math.floor(total / 60);
+      const s = total % 60;
+      return { d, h, m, s };
+    });
+  }
+
   function openNewRuleModal() {
     setEditRuleId(null);
     setRuleFormName("");
@@ -1170,7 +1175,8 @@ export default function App() {
     const name = ruleFormName.trim();
     if (!name) { showToast("请输入规则名称"); return; }
     const pollSecs = pollToSeconds(ruleFormPoll);
-    if (pollSecs <= 0 || pollSecs > 2592000) { showToast("轮询间隔无效"); return; }
+    if (pollSecs <= 0) { showToast("轮询间隔必须大于0"); return; }
+    if (pollSecs > 2592000) { showToast("轮询间隔不能超过30天"); return; }
     const grp = groups.find(g => g.id === currentTabId);
     if ((grp?.rules || []).some(r => r.name === name && r.id !== editRuleId)) {
       showToast("同一分组下已存在同名规则，请修改规则名称"); return;
@@ -1354,7 +1360,8 @@ export default function App() {
                   </span>
                   <span className="ri-log-btn" title="查看日志"
                     onClick={(e) => { e.stopPropagation(); openLogModal(rule.id); }}>📋</span>
-                  <label className="rit2" title={rule.drafted ? "请完成规则配置后再开启规则" : ""}>
+                  <label className="rit2" title={rule.drafted ? "请完成规则配置后再开启规则" : ""}
+                    onClick={e => e.stopPropagation()}>
                     <input type="checkbox" checked={rule.enabled}
                       onClick={e => e.stopPropagation()}
                       onChange={e => toggleRuleEnabled(rule, e.target.checked)} />
@@ -1426,6 +1433,14 @@ export default function App() {
               onOpenDrawer={openDrawer}
               onScaleChange={(delta) => setCanvasScale(s => Math.min(2, Math.max(0.3, s * delta)))}
               onOffsetChange={setCanvasOffset}
+              onRouteLineOffsetChange={(nodeId, newOffset) => {
+                const flow = JSON.parse(JSON.stringify(canvasFlow));
+                if (flow.nodes[nodeId]) {
+                  flow.nodes[nodeId].config = { ...flow.nodes[nodeId].config, lineOffset: newOffset };
+                  setCanvasFlow(flow);
+                  setIsDirty(true);
+                }
+              }}
             />
           ) : (
             <div className="cw" style={{ top: 0 }}>
@@ -1462,6 +1477,7 @@ export default function App() {
           const flow = JSON.parse(JSON.stringify(canvasFlow));
           flow.nodes[nodeId] = { ...flow.nodes[nodeId], ...updates };
           setCanvasFlow(flow);
+          setIsDirty(true);
         }}
         onBranchChange={(nodeId, branchId, updates) => {
           const flow = JSON.parse(JSON.stringify(canvasFlow));
@@ -1469,6 +1485,7 @@ export default function App() {
           if (branch) {
             Object.assign(branch, updates);
             setCanvasFlow(flow);
+            setIsDirty(true);
           }
         }}
         onOpenParamPicker={openParamPicker}
@@ -1511,20 +1528,21 @@ export default function App() {
             <label>轮询间隔</label>
             <div className="poll-row">
               <input type="number" min={0} max={30} value={ruleFormPoll.d}
-                onChange={e => setRuleFormPoll(p => ({ ...p, d: parseInt(e.target.value) || 0 }))}
+                onChange={e => handlePollChange('d', parseInt(e.target.value) || 0)}
                 placeholder="天" /> <span className="poll-unit">天</span>
               <input type="number" min={0} max={23} value={ruleFormPoll.h}
-                onChange={e => setRuleFormPoll(p => ({ ...p, h: parseInt(e.target.value) || 0 }))}
+                onChange={e => handlePollChange('h', parseInt(e.target.value) || 0)}
                 placeholder="时" /> <span className="poll-unit">时</span>
               <input type="number" min={0} max={59} value={ruleFormPoll.m}
-                onChange={e => setRuleFormPoll(p => ({ ...p, m: parseInt(e.target.value) || 0 }))}
+                onChange={e => handlePollChange('m', parseInt(e.target.value) || 0)}
                 placeholder="分" /> <span className="poll-unit">分</span>
               <input type="number" min={0} max={59} value={ruleFormPoll.s}
-                onChange={e => setRuleFormPoll(p => ({ ...p, s: parseInt(e.target.value) || 0 }))}
+                onChange={e => handlePollChange('s', parseInt(e.target.value) || 0)}
                 placeholder="秒" /> <span className="poll-unit">秒</span>
             </div>
             <div id="rph" style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>
-              当前：{pollToStr(ruleFormPoll)}
+              当前：{pollToStr(ruleFormPoll)}（上限30天）<br />
+              上一次执行未结束时，等其完成后再计时
             </div>
           </div>
 
