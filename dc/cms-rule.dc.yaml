@@ -28,9 +28,9 @@ services:
     container_name: cms-rule-front.ems
     restart: always
     ports:
-      - 8097:80
+      - 8095:80
     healthcheck:
       test: ["CMD", "curl", "-f", "-s", "-o", "/dev/null", "http://localhost:80"]
       interval: 10s
       timeout: 5s
-      retries: 30
+      retries: 3
