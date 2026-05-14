@@ -2,7 +2,7 @@ version: '3'
 
 services:
   cms-rule:
-    image: registry.getech.cn/ems/cms-rule:20260514160641main
+    image: registry.getech.cn/ems/cms-rule:20260514172700main
     build:
       context: ../backend
       dockerfile: Dockerfile
@@ -21,7 +21,7 @@ services:
       retries: 3
 
   cms-rule-front:
-    image: registry.getech.cn/ems/cms-rule-front:20260514160641main
+    image: registry.getech.cn/ems/cms-rule-front:20260514172700main
     build:
       context: ../frontend
       dockerfile: Dockerfile
