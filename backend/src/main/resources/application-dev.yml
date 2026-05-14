@@ -1,0 +1,39 @@
+# ============================================
+# 本地开发环境配置
+# spring.profiles.active=dev
+# ============================================
+server:
+  address: 0.0.0.0
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/cms-rule-db?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    username: cmsrule
+    password: cmsrule123
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 3
+      connection-timeout: 30000
+
+  jpa:
+    show-sql: true
+
+management:
+  server:
+    port: 8081
+
+cms-rule:
+  iot:
+    remote-url: http://localhost:9999
+  cmd:
+    remote-url: http://10.74.170.221/api/hvac_iot
+  jwt:
+    secret: dev-secret-key-change-in-production
+  proxy:
+    auth-token: 44e2a67d-1928-4a04-8688-edb8c7459e94
+
+ems:
+  proxy:
+    base-url: http://localhost:8080

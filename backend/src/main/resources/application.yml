@@ -1,12 +1,14 @@
-server:
-  address: 0.0.0.0
-  port: 8080
-
+# ============================================
+# CMS Rule Engine - 公共配置（跨环境共享）
+# ============================================
 spring:
   main:
     allow-bean-definition-overriding: true
   application:
     name: cms-rule
+  profiles:
+    active: dev   # 默认 dev，生产通过 java -jar -Dspring.profiles.active=prod 切换
+
   cloud:
     openfeign:
       client:
@@ -15,24 +17,11 @@ spring:
             connect-timeout: 5000
             read-timeout: 30000
 
-  datasource:
-    # 主数据源：cms-rule 自身数据库
-    url: jdbc:mysql://localhost:3306/cms-rule-db?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
-    username: cmsrule
-    password: cmsrule123
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    hikari:
-      maximum-pool-size: 10
-      minimum-idle: 3
-      connection-timeout: 30000
-
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: false
     properties:
       hibernate:
-        format_sql: false
         dialect: org.hibernate.dialect.MySQLDialect
 
   jackson:
@@ -41,28 +30,18 @@ spring:
     date-format: yyyy-MM-dd HH:mm:ss
     time-zone: Asia/Shanghai
 
-# Actuator（Docker 部署时管理端口 8081，本地开发保持 8080）
+# Actuator 公共配置
 management:
-  server:
-    port: 8081
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,readiness
   endpoint:
     health:
-      show-details: always
+      show-details: when_authorized
 
-# cms-rule specific config
+# cms-rule 引擎公共配置
 cms-rule:
-  iot:
-    remote-url: http://localhost:9999
-  cmd:
-    remote-url: http://10.74.170.221/api/hvac_iot
-  jwt:
-    secret: dev-secret-key-change-in-production
-  proxy:
-    auth-token: 44e2a67d-1928-4a04-8688-edb8c7459e94
   engine:
     max-loop-per-node: 10
     script-timeout-seconds: 5
@@ -72,7 +51,3 @@ cms-rule:
   rate-limit:
     default-qps: 100
     burst-seconds: 2
-
-ems:
-  proxy:
-    base-url: http://localhost:8080
