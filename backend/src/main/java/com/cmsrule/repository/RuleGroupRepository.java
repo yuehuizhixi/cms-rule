@@ -8,5 +8,6 @@ import java.util.Optional;
 public interface RuleGroupRepository extends JpaRepository<RuleGroup, String> {
     List<RuleGroup> findAllByOrderByTabOrderAsc();
     Optional<RuleGroup> findFirstByOrderByTabOrderDesc();
+    Optional<RuleGroup> findByName(String name);
     long count();
 }

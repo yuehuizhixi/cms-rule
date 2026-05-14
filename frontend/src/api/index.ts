@@ -163,3 +163,87 @@ export async function proxyQueryBindRelationAll(body: Record<string, any>): Prom
   const res = await proxyClient.post('/projectModel/queryBindRelationAll', body);
   return res.data;
 }
+
+// ========== EMS 数据源接口（EMS 库模型/设备/参数查询） ==========
+
+const emsClient = axios.create({ baseURL: `http://${API_HOST}:8080/api/rule-engine/ems` });
+
+/** EMS 设备模型 */
+export interface EmsDeviceModel {
+  id: number;
+  tenantId: string;
+  category: string;
+  modelType: string;
+  modelMark: string;
+  modelName: string;
+  modelGroup: string;
+}
+
+/** EMS 设备信息 */
+export interface EmsDeviceInfo {
+  id: number;
+  tenantId: string;
+  deviceMark: string;
+  deviceName: string;
+  modelMark: string;
+  modelName: string;
+}
+
+/** EMS 参数响应 */
+export interface EmsParamResponse {
+  modelMark: string;
+  paramMark: string;
+  paramName: string;
+  unit: string;
+  deliverFlag: string;
+  valueSource: string;
+  paramType: string;
+  deliverType: string;
+}
+
+/** 参数值请求 */
+export interface EmsParamValueRequest {
+  modelMark: string;
+  paramMark: string;
+}
+
+/** 参数值响应 */
+export interface EmsParamValueResponse {
+  modelMark: string;
+  paramMark: string;
+  paramName: string;
+  unit: string;
+  deviceMark: string | null;
+}
+
+/**
+ * GET /ems/models — 获取所有设备模型
+ */
+export async function getEmsModels(): Promise<ApiResponse<EmsDeviceModel[]>> {
+  const res = await emsClient.get('/models');
+  return res.data;
+}
+
+/**
+ * GET /ems/models/{modelMark}/params — 获取指定模型的参数列表
+ */
+export async function getEmsParams(modelMark: string): Promise<ApiResponse<EmsParamResponse[]>> {
+  const res = await emsClient.get(`/models/${modelMark}/params`);
+  return res.data;
+}
+
+/**
+ * GET /ems/models/{modelMark}/devices — 获取指定模型的设备列表
+ */
+export async function getEmsDevices(modelMark: string): Promise<ApiResponse<EmsDeviceInfo[]>> {
+  const res = await emsClient.get(`/models/${modelMark}/devices`);
+  return res.data;
+}
+
+/**
+ * POST /ems/params/values — 批量查询参数对应的设备信息
+ */
+export async function getEmsParamValues(params: EmsParamValueRequest[]): Promise<ApiResponse<EmsParamValueResponse[]>> {
+  const res = await emsClient.post('/params/values', params);
+  return res.data;
+}

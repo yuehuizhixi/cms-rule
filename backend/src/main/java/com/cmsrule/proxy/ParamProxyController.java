@@ -1,17 +1,18 @@
 package com.cmsrule.proxy;
 
-import org.springframework.http.HttpHeaders;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.reactive.function.client.WebClient;
-import reactor.core.publisher.Mono;
+import org.springframework.web.client.RestTemplate;
 
-import java.util.Map;
+import java.util.*;
 
 /**
  * 参数选择代理——将前端请求转发到实际的 HVAC-IoT 和 CMS 服务
  *
- * 前端 → Vite proxy → cms-rule 后端 (:8080) → 10.74.170.221 (Kong API 网关)
- * 认证通过 Authorization header (Bearer token) 透传
+ * 由于 10.74.170.221 需要通过代理访问，使用 RestTemplate（自动遵循 JVM 代理设置）
  */
 @RestController
 @RequestMapping("/api/rule-engine/proxy")
@@ -22,103 +23,101 @@ public class ParamProxyController {
     private static final String HVAC_API = REMOTE_HOST + "/api/hvac_iot";
     private static final String BUSINESS_API = REMOTE_HOST + "/api/business";
 
-    private final WebClient webClient;
+    @Value("${cms-rule.proxy.auth-token}")
+    private String fallbackAuthToken;
 
-    public ParamProxyController(WebClient.Builder wb) {
-        this.webClient = wb.build();
+    private final RestTemplate restTemplate;
+
+    public ParamProxyController(@Qualifier("proxyRestTemplate") RestTemplate restTemplate) {
+        this.restTemplate = restTemplate;
     }
 
-    /** 构造带认证透传的 POST 请求 */
-    private WebClient.RequestBodySpec buildPost(String url, String authHeader) {
-        return webClient.post()
-                .uri(url)
-                .header(HttpHeaders.AUTHORIZATION, authHeader != null ? authHeader : "");
+    /** POST 请求带认证兜底 */
+    private Object post(String url, Object body, String authHeader) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        String auth = (authHeader != null && !authHeader.isBlank())
+                ? authHeader : "Bearer " + fallbackAuthToken;
+        headers.set(HttpHeaders.AUTHORIZATION, auth);
+        HttpEntity<Object> entity = new HttpEntity<>(body, headers);
+        try {
+            ResponseEntity<Object> resp = restTemplate.exchange(
+                    url, HttpMethod.POST, entity, Object.class);
+            return resp.getBody();
+        } catch (Exception e) {
+            Map<String, Object> err = new LinkedHashMap<>();
+            err.put("code", 500);
+            err.put("message", "代理请求失败: " + e.getMessage());
+            return err;
+        }
     }
 
-    // ── 1. 能源类型 ──
+    // ── 原有代理端点 ──
     @PostMapping("/energyInfo/queryCache")
-    public Mono<Object> queryEnergyCache(
-            @RequestBody(required = false) Map<String, Object> body,
+    public Object queryEnergyCache(@RequestBody(required = false) Map<String, Object> body,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
-        return buildPost(CMS_API + "/energyInfo/queryCache", auth)
-                .bodyValue(body == null ? Map.of() : body)
-                .retrieve()
-                .bodyToMono(Object.class);
+        return post(CMS_API + "/energyInfo/queryCache", body == null ? Map.of() : body, auth);
     }
-
-    // ── 2. 位置树 ──
     @PostMapping("/locationTree/query")
-    public Mono<Object> queryLocationTree(
-            @RequestBody Map<String, Object> body,
+    public Object queryLocationTree(@RequestBody Map<String, Object> body,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
-        return buildPost(CMS_API + "/locationTree/query", auth)
-                .bodyValue(body)
-                .retrieve()
-                .bodyToMono(Object.class);
+        return post(CMS_API + "/locationTree/query", body, auth);
     }
-
-    // ── 3. 设备参数列表（分页） ──
     @PostMapping("/jnyz/dataset/queryParams")
-    public Mono<Object> queryParams(
-            @RequestBody Map<String, Object> body,
+    public Object queryParams(@RequestBody Map<String, Object> body,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
-        return buildPost(HVAC_API + "/jnyz/dataset/queryParams", auth)
-                .bodyValue(body)
-                .retrieve()
-                .bodyToMono(Object.class);
+        return post(HVAC_API + "/jnyz/dataset/queryParams", body, auth);
     }
-
-    // ── 4. 字典查询（模型类型、视角等） ──
     @PostMapping("/dictionary/queryCacheQuery")
-    public Mono<Object> queryDictionaryCache(
-            @RequestBody Map<String, Object> body,
+    public Object queryDictionaryCache(@RequestBody Map<String, Object> body,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
-        return buildPost(CMS_API + "/dictionary/queryCacheQuery", auth)
-                .bodyValue(body)
-                .retrieve()
-                .bodyToMono(Object.class);
+        return post(CMS_API + "/dictionary/queryCacheQuery", body, auth);
     }
-
     @PostMapping("/dictionary/queryNoCacheQuery")
-    public Mono<Object> queryDictionaryNoCache(
-            @RequestBody Map<String, Object> body,
+    public Object queryDictionaryNoCache(@RequestBody Map<String, Object> body,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
-        return buildPost(CMS_API + "/dictionary/queryNoCacheQuery", auth)
-                .bodyValue(body)
-                .retrieve()
-                .bodyToMono(Object.class);
+        return post(CMS_API + "/dictionary/queryNoCacheQuery", body, auth);
     }
-
-    // ── 5. 绑定关系查询 ──
     @PostMapping("/projectModel/queryBindRelationAll")
-    public Mono<Object> queryBindRelationAll(
-            @RequestBody Map<String, Object> body,
+    public Object queryBindRelationAll(@RequestBody Map<String, Object> body,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
-        return buildPost(CMS_API + "/projectModel/queryBindRelationAll", auth)
-                .bodyValue(body)
-                .retrieve()
-                .bodyToMono(Object.class);
+        return post(CMS_API + "/projectModel/queryBindRelationAll", body, auth);
     }
-
-    // ── 6. 数据模拟列表（UC/对象树模式用） —— 参考 businessApi，非 baseApi ──
     @PostMapping("/dataSimulation/list")
-    public Mono<Object> queryDataSimulationList(
-            @RequestBody Map<String, Object> body,
+    public Object queryDataSimulationList(@RequestBody Map<String, Object> body,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
-        return buildPost(BUSINESS_API + "/dataSimulation/list", auth)
-                .bodyValue(body)
-                .retrieve()
-                .bodyToMono(Object.class);
+        return post(BUSINESS_API + "/dataSimulation/list", body, auth);
+    }
+    @PostMapping("/emissionInfo/queryCacheAll")
+    public Object queryEmissionCacheAll(@RequestBody(required = false) Map<String, Object> body,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
+        return post(CMS_API + "/emissionInfo/queryCacheAll", body == null ? Map.of() : body, auth);
     }
 
-    // ── 7. 排放模型能源类型 ──
-    @PostMapping("/emissionInfo/queryCacheAll")
-    public Mono<Object> queryEmissionCacheAll(
-            @RequestBody(required = false) Map<String, Object> body,
+    // ── EMS 数据代理 ──
+    @PostMapping("/device/queryModelList")
+    public Object queryModelList(@RequestBody(required = false) Map<String, Object> body,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
-        return buildPost(CMS_API + "/emissionInfo/queryCacheAll", auth)
-                .bodyValue(body == null ? Map.of() : body)
-                .retrieve()
-                .bodyToMono(Object.class);
+        return post(BUSINESS_API + "/device/queryModelList", body == null ? Map.of() : body, auth);
+    }
+    @PostMapping("/device/queryDeviceListByModelMark")
+    public Object queryDeviceListByModelMark(@RequestBody(required = false) Map<String, Object> body,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
+        return post(BUSINESS_API + "/device/queryDeviceListByModelMark", body == null ? Map.of() : body, auth);
+    }
+    @PostMapping("/device/queryParamlist")
+    public Object queryParamlist(@RequestBody(required = false) Map<String, Object> body,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
+        return post(BUSINESS_API + "/device/queryParamlist", body == null ? Map.of() : body, auth);
+    }
+    @PostMapping("/device/realdata")
+    public Object realdata(@RequestBody(required = false) Map<String, Object> body,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
+        return post(BUSINESS_API + "/device/realdata", body == null ? Map.of() : body, auth);
+    }
+    @PostMapping("/comm-raw-param/batch-latest")
+    public Object batchLatest(@RequestBody(required = false) Object body,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String auth) {
+        return post(CMS_API + "/comm-raw-param/batch-latest", body == null ? Map.of() : body, auth);
     }
 }

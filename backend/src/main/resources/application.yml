@@ -7,8 +7,16 @@ spring:
     allow-bean-definition-overriding: true
   application:
     name: cms-rule
+  cloud:
+    openfeign:
+      client:
+        config:
+          cmd-service:
+            connect-timeout: 5000
+            read-timeout: 30000
 
   datasource:
+    # 主数据源：cms-rule 自身数据库
     url: jdbc:mysql://localhost:3306/cms-rule-db?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
     username: cmsrule
     password: cmsrule123
@@ -48,12 +56,18 @@ cms-rule:
   iot:
     remote-url: http://localhost:9999
   cmd:
-    remote-url: http://localhost:9998
+    remote-url: http://10.74.170.221/api/hvac_iot
   jwt:
     secret: dev-secret-key-change-in-production
+  proxy:
+    auth-token: 44e2a67d-1928-4a04-8688-edb8c7459e94
   engine:
     max-loop-per-node: 10
     script-timeout-seconds: 5
   cache:
     enabled: false
     point-ttl-seconds: 300
+
+ems:
+  proxy:
+    base-url: http://localhost:8080

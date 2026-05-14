@@ -675,7 +675,9 @@ public class RuleExecutor {
                 // Non-numeric value, keep as-is
             }
 
-            // 下发指令 (param既是点名称也是设备标识, Mock模式直接返回true)
+            // 下发指令到 service-model
+            // deviceMark 和 paramMark 目前都用 param 参数名（前端选择参数时即点位编码）
+            // 正式对接时可通过配置表将参数名映射为 deviceMark
             boolean success = platformService.writePointValue(param, param, targetValue);
 
             if (success) {

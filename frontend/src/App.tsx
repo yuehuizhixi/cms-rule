@@ -176,6 +176,8 @@ export default function App() {
 
   const currentRule = currentGroup?.rules.find(r => r.id === currentRuleId);
   const allRules = groups.flatMap(g => g.rules);
+  const ruleGroupMap = new Map<string, string>();
+  groups.forEach(g => g.rules.forEach(r => ruleGroupMap.set(r.id, g.name)));
   const filteredRules = sortRules(
     (currentGroup?.rules || []).filter(r => {
       const nm = !filterName || r.name.toLowerCase().includes(filterName.toLowerCase());
@@ -281,7 +283,11 @@ export default function App() {
       setCurrentRuleId(null);
       setIsDirty(false);
       showToast("已创建分组");
-    } catch { showToast("创建分组失败"); }
+    } catch (e: any) {
+      const msg = e?.response?.data?.message || e?.message || "";
+      showToast(msg || "创建分组失败");
+      if (e?.response?.data?.code === 4001) return;
+    }
   }
 
   async function deleteTab(tabId: string) {
@@ -305,7 +311,11 @@ export default function App() {
       await api.updateGroup(tabId, newName.trim());
       await loadData();
       setTabEditing(null);
-    } catch { showToast("重命名失败"); }
+    } catch (e: any) {
+      const msg = e?.response?.data?.message || e?.message || "";
+      showToast(msg || "重命名失败");
+      if (e?.response?.data?.code === 4001) return;
+    }
   }
 
   // --- Rule Operations ---
@@ -1569,7 +1579,7 @@ export default function App() {
               <select id="lm-filter-rule" value={logFilterRule}
                 onChange={e => setLogFilterRule(e.target.value)}>
                 <option value="">全部规则</option>
-                {allRules.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                {allRules.map(r => <option key={r.id} value={r.id}>[{ruleGroupMap.get(r.id) || '?'} - {r.name}]</option>)}
               </select>
               <input type="datetime-local" id="lm-filter-ts-start" value={logFilterTsStart}
                 onChange={e => setLogFilterTsStart(e.target.value)} />
