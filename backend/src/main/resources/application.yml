@@ -69,6 +69,9 @@ cms-rule:
   cache:
     enabled: false
     point-ttl-seconds: 300
+  rate-limit:
+    default-qps: 100
+    burst-seconds: 2
 
 ems:
   proxy:
