@@ -131,7 +131,7 @@ export async function getParameterLastValues(): Promise<ApiResponse<any[]>> {
 
 // ========== 参数选择代理接口 (proxy to real microservices) ==========
 
-const proxyClient = axios.create({ baseURL: `http://${API_HOST}:8080/api/rule-engine/proxy` });
+const proxyClient = axios.create({ baseURL: '/api/rule-engine/proxy' });
 
 // 能源类型
 // POST /api/cms-cloud-service/energyInfo/queryCache
@@ -167,7 +167,7 @@ export async function proxyQueryBindRelationAll(body: Record<string, any>): Prom
 
 // ========== EMS 数据源接口（EMS 库模型/设备/参数查询） ==========
 
-const emsClient = axios.create({ baseURL: `http://${API_HOST}:8080/api/rule-engine/ems` });
+const emsClient = axios.create({ baseURL: '/api/rule-engine/ems' });
 
 /** EMS 设备模型 */
 export interface EmsDeviceModel {
