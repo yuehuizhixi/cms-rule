@@ -1,7 +1,8 @@
 import axios from 'axios';
 
-const API_HOST = window.location.hostname;
-const client = axios.create({ baseURL: `http://${API_HOST}:8080/api/rule-engine` });
+// Docker 部署时通过 nginx 反向代理，使用相对路径
+// 本地开发时通过 vite proxy
+const client = axios.create({ baseURL: '/api/rule-engine' });
 
 export interface ApiResponse<T> {
   code: number;

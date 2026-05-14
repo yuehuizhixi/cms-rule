@@ -134,6 +134,19 @@
             <artifactId>spring-cloud-starter-openfeign</artifactId>
         </dependency>
 
+        <!-- Nacos Config -->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+            <version>2023.0.1.0</version>
+        </dependency>
+
+        <!-- Spring Cloud Bootstrap (for bootstrap.yml / bootstrap.properties) -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-bootstrap</artifactId>
+        </dependency>
+
         <!-- Spring Boot Starter Webflux (for WebClient) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

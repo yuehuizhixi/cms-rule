@@ -1,0 +1,22 @@
+# Nacos 配置中心启动配置
+# Docker 部署时通过 JAVA_OPTS 覆盖 spring.cloud.nacos.config.server-addr
+spring:
+  cloud:
+    nacos:
+      config:
+        server-addr: 127.0.0.1:8848
+        namespace: ''
+        group: common
+        file-extension: yaml
+        username: nacos
+        password: nacos
+        # 共享配置（多个微服务共用）
+        shared-configs:
+          - data-id: common.yaml
+            group: common
+            refresh: true
+        # 本服务独有配置
+        extension-configs:
+          - data-id: cms-rule-common.yaml
+            group: common
+            refresh: true

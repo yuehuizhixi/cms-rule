@@ -1,0 +1,45 @@
+# Nacos 配置中心侧的配置内容（将此文件内容推送到 Nacos 的 cms-rule-common.yaml）
+# 此文件作为模板，deploy 时通过 yamltonacos 推送到 Nacos
+
+server:
+  port: 8080
+  address: 0.0.0.0
+
+spring:
+  datasource:
+    url: jdbc:mysql://cms-mysql.ems-pt:3306/cms-rule-db?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    username: ems
+    password: ${MYSQL_PASSWORD:emsl234567}
+    driver-class-name: com.mysql.cj.cms-mysql.ems-pt.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 3
+      connection-timeout: 30000
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+
+  data:
+    redis:
+      host: cms-redis.ems-pt
+      port: 6379
+      password: ${REDIS_PASSWORD:emsredis123}
+      timeout: 5000
+
+cms-rule:
+  iot:
+    api-base-url: http://cms-openapi.ems-pt:9200
+  cmd:
+    remote-url: http://cms-service-model.ems-pt:8200
+  jwt:
+    secret: ${JWT_SECRET:dev-secret-key-change-in-production}
+  engine:
+    max-loop-per-node: 10
+    script-timeout-seconds: 5
+  cache:
+    enabled: true
+    point-ttl-seconds: 300

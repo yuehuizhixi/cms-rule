@@ -1,0 +1,36 @@
+version: '3'
+
+services:
+  cms-rule:
+    image: registry.getech.cn/ems/cms-rule:latest
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: cms-rule.ems
+    restart: always
+    ports:
+      - 8080:8080
+      - 8081:8081
+    environment:
+      - TZ=Asia/Shanghai
+      - JAVA_OPTS=-Dspring.profiles.active=common -Dspring.cloud.nacos.config.enabled=true -Dspring.cloud.nacos.config.server-addr=cms-nacos.ems-pt:8848 -Dspring.cloud.nacos.config.group=common -Dspring.application.name=cms-rule -Dspring.cloud.nacos.config.username=nacos -Dspring.cloud.nacos.config.password=nacos
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 8081 && curl -s --fail localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  cms-rule-front:
+    image: registry.getech.cn/ems/cms-rule-front:latest
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: cms-rule-front.ems
+    restart: always
+    ports:
+      - 8097:80
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-s", "-o", "/dev/null", "http://localhost:80"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
