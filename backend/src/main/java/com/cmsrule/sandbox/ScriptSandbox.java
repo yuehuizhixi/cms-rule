@@ -29,6 +29,11 @@ import java.util.regex.Pattern;
 @Slf4j
 public class ScriptSandbox {
 
+    // 安全限制常量
+    private static final int MAX_EXPR_LENGTH = 10240;   // 最大表达式长度（10KB）
+    private static final int MAX_NEST_DEPTH = 50;        // 最大嵌套深度
+    private static final int MAX_EVAL_STEPS = 100000;    // 最大求值步数
+
     // 允许的变量名模式（字母数字下划线）
     private static final Pattern VAR_PATTERN = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_]*$");
 
@@ -37,6 +42,11 @@ public class ScriptSandbox {
             "java.", "Runtime", "System", "Process", "exec", "eval",
             "Class", "forName", "script", "import", "new ", "reflection"
     );
+
+    // 线程局部变量：当前递归深度
+    private final ThreadLocal<Integer> currentDepth = ThreadLocal.withInitial(() -> 0);
+    // 线程局部变量：当前求值步数
+    private final ThreadLocal<Integer> currentSteps = ThreadLocal.withInitial(() -> 0);
 
     /**
      * 执行表达式求值
@@ -49,6 +59,12 @@ public class ScriptSandbox {
             return false;
         }
 
+        // 长度限制
+        if (expression.length() > MAX_EXPR_LENGTH) {
+            log.warn("表达式过长（{} > {}），已拒绝: {}", expression.length(), MAX_EXPR_LENGTH, expression.substring(0, 200));
+            return false;
+        }
+
         // 安全检查
         if (!isExpressionSafe(expression)) {
             log.warn("表达式包含危险内容，已拒绝执行: {}", expression);
@@ -56,6 +72,10 @@ public class ScriptSandbox {
         }
 
         try {
+            // 重置线程局部计数器
+            currentDepth.set(0);
+            currentSteps.set(0);
+
             // 替换变量为实际值
             String expr = substituteVariables(expression.trim(), variables);
             // 解析并求值
@@ -130,6 +150,8 @@ public class ScriptSandbox {
         expr = expr.trim();
 
         // 使用递归下降求值
+        currentDepth.set(0);
+        currentSteps.set(0);
         return parseOr(expr, new int[]{0});
     }
 
@@ -140,6 +162,7 @@ public class ScriptSandbox {
      * or_expr ::= and_expr ('||' and_expr)*
      */
     private boolean parseOr(String expr, int[] pos) {
+        guard();
         boolean left = parseAnd(expr, pos);
 
         while (pos[0] < expr.length()) {
@@ -167,6 +190,7 @@ public class ScriptSandbox {
      * and_expr ::= not_expr ('&&' not_expr)*
      */
     private boolean parseAnd(String expr, int[] pos) {
+        guard();
         boolean left = parseNot(expr, pos);
 
         while (pos[0] < expr.length()) {
@@ -193,6 +217,7 @@ public class ScriptSandbox {
      * not_expr ::= '!'? primary
      */
     private boolean parseNot(String expr, int[] pos) {
+        guard();
         skipWhitespace(expr, pos);
         if (match(expr, pos, "!")) {
             return !parsePrimary(expr, pos);
@@ -205,6 +230,7 @@ public class ScriptSandbox {
      * primary ::= number | string | boolean | variable | '(' or_expr ')'
      */
     private boolean parsePrimary(String expr, int[] pos) {
+        guard();
         skipWhitespace(expr, pos);
 
         if (pos[0] >= expr.length()) {
@@ -233,6 +259,7 @@ public class ScriptSandbox {
      * comparison ::= arithmetic (('>' | '<' | '>=' | '<=' | '==' | '!=') arithmetic)*
      */
     private boolean parseComparison(String expr, int[] pos) {
+        guard();
         // 先解析左边的算术表达式
         Object left = parseArithmetic(expr, pos);
         skipWhitespace(expr, pos);
@@ -263,6 +290,7 @@ public class ScriptSandbox {
      * arithmetic ::= term (('+' | '-') term)*
      */
     private Object parseArithmetic(String expr, int[] pos) {
+        guard();
         Object left = parseTerm(expr, pos);
         skipWhitespace(expr, pos);
 
@@ -286,6 +314,7 @@ public class ScriptSandbox {
      * term ::= factor (('*' | '/' | '%') factor)*
      */
     private Object parseTerm(String expr, int[] pos) {
+        guard();
         Object left = parseFactor(expr, pos);
         skipWhitespace(expr, pos);
 
@@ -312,6 +341,7 @@ public class ScriptSandbox {
      * factor ::= number | string | boolean | variable | '(' expression ')'
      */
     private Object parseFactor(String expr, int[] pos) {
+        guard();
         skipWhitespace(expr, pos);
 
         if (pos[0] >= expr.length()) {
@@ -377,6 +407,17 @@ public class ScriptSandbox {
     }
 
     // ==================== 工具方法 ====================
+
+    /**
+     * 步数计数 + 安全检查（在每个解析方法入口调用）
+     */
+    private void guard() {
+        int steps = currentSteps.get() + 1;
+        currentSteps.set(steps);
+        if (steps > MAX_EVAL_STEPS) {
+            throw new RuntimeException("表达式求值超过最大步数限制(" + MAX_EVAL_STEPS + ")");
+        }
+    }
 
     private void skipWhitespace(String expr, int[] pos) {
         while (pos[0] < expr.length() && Character.isWhitespace(expr.charAt(pos[0]))) {
